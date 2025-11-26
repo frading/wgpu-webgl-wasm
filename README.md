@@ -34,7 +34,9 @@ npm run build:wasm
 npm run dev
 ```
 
-Then open http://localhost:8080/triangle.html in your browser.
+Then open one of the demos in your browser:
+- http://localhost:8080/triangle.html - Simple triangle (vertex positions in shader)
+- http://localhost:8080/triangle_buffer.html - Triangle with vertex buffer
 
 ### Available Scripts
 
@@ -86,9 +88,13 @@ wgpu-webgl-wasm/
 │       ├── webgpu-backend.ts   # Native WebGPU backend
 │       ├── webgl-backend.ts    # WASM WebGL2 backend
 │       ├── logger.ts       # Logging utilities
-│       └── triangle.ts     # Triangle demo entry point
+│       ├── triangle.ts     # Triangle demo (positions in shader)
+│       └── triangle_buffer.ts  # Triangle demo (positions in buffer)
+├── tests/                  # Rust tests
+│   └── transpile.rs        # WGSL→GLSL transpilation tests
 ├── pkg/                    # Generated WASM + JS bindings
 ├── triangle.html           # Triangle demo page
+├── triangle_buffer.html    # Triangle with vertex buffer demo
 └── test.html               # Basic tests page
 ```
 

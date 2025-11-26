@@ -1,7 +1,8 @@
 //! Command encoding and render pass
 
+use super::buffer::WBuffer;
 use super::device::GlContextRef;
-use super::pipeline::WRenderPipeline;
+use super::pipeline::{WRenderPipeline, StoredVertexBufferLayout};
 use super::types::WLoadOp;
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
@@ -14,6 +15,8 @@ pub struct WRenderPassEncoder {
     current_pipeline: Option<glow::Program>,
     current_vao: Option<glow::VertexArray>,
     current_topology: u32,
+    /// Stored vertex layout from the current pipeline for configuring attributes
+    current_vertex_layout: Option<StoredVertexBufferLayout>,
 }
 
 impl WRenderPassEncoder {
@@ -23,6 +26,7 @@ impl WRenderPassEncoder {
             current_pipeline: None,
             current_vao: None,
             current_topology: glow::TRIANGLES,
+            current_vertex_layout: None,
         }
     }
 }
@@ -40,6 +44,8 @@ impl WRenderPassEncoder {
         self.current_pipeline = Some(pipeline.program);
         self.current_vao = Some(pipeline.vao);
         self.current_topology = pipeline.topology.to_gl();
+        // Store the vertex layout for use when setVertexBuffer is called
+        self.current_vertex_layout = pipeline.vertex_layout.clone();
     }
 
     /// Draw primitives
@@ -123,6 +129,58 @@ impl WRenderPassEncoder {
             ctx.gl.enable(glow::SCISSOR_TEST);
             ctx.gl.scissor(x as i32, y as i32, width as i32, height as i32);
         }
+    }
+
+    /// Set a vertex buffer for a specific slot
+    /// slot: the vertex buffer slot index
+    /// buffer: the buffer to bind
+    /// offset: byte offset into the buffer
+    #[wasm_bindgen(js_name = setVertexBuffer)]
+    pub fn set_vertex_buffer(&self, slot: u32, buffer: &WBuffer, offset: u32) {
+        let ctx = self.context.borrow();
+        unsafe {
+            // Bind the buffer
+            ctx.gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer.raw));
+
+            // Configure vertex attributes now that the buffer is bound
+            // In WebGL, glVertexAttribPointer captures the currently bound GL_ARRAY_BUFFER
+            if let Some(ref layout) = self.current_vertex_layout {
+                // Only configure attributes for slot 0 for now (single vertex buffer)
+                if slot == 0 {
+                    for attr in &layout.attributes {
+                        ctx.gl.enable_vertex_attrib_array(attr.location);
+                        ctx.gl.vertex_attrib_pointer_f32(
+                            attr.location,
+                            attr.format.components(),
+                            attr.format.gl_type(),
+                            false, // normalized
+                            layout.stride as i32,
+                            (attr.offset + offset) as i32,
+                        );
+                        log::debug!(
+                            "Configured vertex attribute {}: offset={}, components={}, stride={}",
+                            attr.location, attr.offset + offset, attr.format.components(), layout.stride
+                        );
+                    }
+                }
+            }
+
+            log::debug!("Vertex buffer set at slot {}, offset {}", slot, offset);
+        }
+    }
+
+    /// Set the index buffer
+    /// buffer: the index buffer to bind
+    /// format: index format (0 = uint16, 1 = uint32)
+    /// offset: byte offset into the buffer
+    #[wasm_bindgen(js_name = setIndexBuffer)]
+    pub fn set_index_buffer(&self, buffer: &WBuffer, format: u32, offset: u32) {
+        let ctx = self.context.borrow();
+        unsafe {
+            ctx.gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(buffer.raw));
+            log::debug!("Index buffer set, format {}, offset {}", format, offset);
+        }
+        let _ = (format, offset); // Suppress unused warnings for now
     }
 
     /// End the render pass

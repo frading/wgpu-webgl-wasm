@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Triangle - WebGPU / WebGL2 Fallback (Generic API)</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a2e; color: #eee; margin: 0; }
+        canvas { border: 1px solid #444; display: block; margin: 20px auto; }
+        .info { text-align: center; margin: 10px; }
+        .webgpu { color: #4ade80; }
+        .webgl { color: #fbbf24; }
+        .error { color: #f87171; }
+        h1 { text-align: center; }
+        #logs {
+            max-width: 800px;
+            margin: 20px auto;
+            background: #0f0f1a;
+            padding: 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry { margin: 2px 0; }
+        .log-info { color: #60a5fa; }
+        .log-warn { color: #fbbf24; }
+        .log-error { color: #f87171; }
+        .log-debug { color: #a78bfa; }
+    </style>
+</head>
+<body>
+    <h1>Triangle Rendering (JS-Driven)</h1>
+    <div id="status" class="info">Initializing...</div>
+    <canvas id="canvas" width="600" height="400"></canvas>
+    <div id="logs"></div>
+
+    <script type="module">
+        // Custom logger to show logs on the page
+        const logsDiv = document.getElementById('logs');
+        function log(level, ...args) {
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${level}`;
+            entry.textContent = `[${level.toUpperCase()}] ${args.join(' ')}`;
+            logsDiv.appendChild(entry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            console[level](...args);
+        }
+
+        // Shader source (WGSL) - THE SAME shader is used for both paths!
+        const SHADER_CODE = `
+@vertex
+fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<f32> {
+    var positions = array<vec2<f32>, 3>(
+        vec2<f32>(0.0, 0.5),
+        vec2<f32>(-0.5, -0.5),
+        vec2<f32>(0.5, -0.5)
+    );
+    return vec4<f32>(positions[vertex_index], 0.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4<f32> {
+    return vec4<f32>(1.0, 0.5, 0.2, 1.0);
+}
+`;
+
+        // ============================================================
+        // Abstraction layer - same interface for WebGPU and WebGL
+        // ============================================================
+
+        let gpu = null; // Will hold either WebGPU or WebGL backend
+
+        // WebGPU backend
+        const WebGPUBackend = {
+            async init(canvas) {
+                log('info', 'Initializing WebGPU backend...');
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) throw new Error('No WebGPU adapter');
+
+                const device = await adapter.requestDevice();
+                const context = canvas.getContext('webgpu');
+                const format = navigator.gpu.getPreferredCanvasFormat();
+
+                context.configure({ device, format, alphaMode: 'premultiplied' });
+
+                return {
+                    device,
+                    queue: device.queue,
+                    context,
+                    format,
+                    canvas
+                };
+            },
+
+            createShaderModule(ctx, code, vertexEntry, fragmentEntry) {
+                log('debug', 'WebGPU: createShaderModule');
+                return ctx.device.createShaderModule({ code });
+            },
+
+            createRenderPipeline(ctx, shaderModule, topology) {
+                log('debug', 'WebGPU: createRenderPipeline');
+                return ctx.device.createRenderPipeline({
+                    layout: 'auto',
+                    vertex: {
+                        module: shaderModule,
+                        entryPoint: 'vs_main',
+                    },
+                    fragment: {
+                        module: shaderModule,
+                        entryPoint: 'fs_main',
+                        targets: [{ format: ctx.format }],
+                    },
+                    primitive: { topology: 'triangle-list' },
+                });
+            },
+
+            beginFrame(ctx, clearColor) {
+                const commandEncoder = ctx.device.createCommandEncoder();
+                const textureView = ctx.context.getCurrentTexture().createView();
+                const renderPass = commandEncoder.beginRenderPass({
+                    colorAttachments: [{
+                        view: textureView,
+                        clearValue: clearColor,
+                        loadOp: 'clear',
+                        storeOp: 'store',
+                    }],
+                });
+                return { commandEncoder, renderPass };
+            },
+
+            setPipeline(frame, pipeline) {
+                frame.renderPass.setPipeline(pipeline);
+            },
+
+            draw(frame, vertexCount, instanceCount, firstVertex, firstInstance) {
+                frame.renderPass.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+            },
+
+            endFrame(ctx, frame) {
+                frame.renderPass.end();
+                ctx.queue.submit([frame.commandEncoder.finish()]);
+            }
+        };
+
+        // WebGL backend (via WASM)
+        const WebGLBackend = {
+            wasm: null,
+
+            async init(canvas) {
+                log('info', 'Initializing WebGL backend via WASM...');
+
+                // Load WASM module
+                this.wasm = await import('./pkg/wgpu_webgl_wasm.js');
+                await this.wasm.default();
+                log('info', 'WASM module loaded');
+
+                // Create device (this gets the WebGL2 context internally)
+                const device = this.wasm.createDevice(canvas);
+                const queue = device.getQueue();
+
+                return {
+                    device,
+                    queue,
+                    canvas,
+                    wasm: this.wasm
+                };
+            },
+
+            createShaderModule(ctx, code, vertexEntry, fragmentEntry) {
+                log('debug', 'WebGL: createShaderModule (transpiling WGSL -> GLSL)');
+                return ctx.wasm.createShaderModule(ctx.device, code, vertexEntry, fragmentEntry);
+            },
+
+            createRenderPipeline(ctx, shaderModule, topology) {
+                log('debug', 'WebGL: createRenderPipeline');
+                return ctx.wasm.createRenderPipeline(
+                    ctx.device,
+                    shaderModule,
+                    ctx.wasm.WPrimitiveTopology.TriangleList
+                );
+            },
+
+            beginFrame(ctx, clearColor) {
+                const commandEncoder = ctx.wasm.createCommandEncoder(ctx.device);
+                const renderPass = commandEncoder.beginRenderPass(
+                    clearColor.r,
+                    clearColor.g,
+                    clearColor.b,
+                    clearColor.a,
+                    ctx.wasm.WLoadOp.Clear
+                );
+                return { commandEncoder, renderPass };
+            },
+
+            setPipeline(frame, pipeline) {
+                frame.renderPass.setPipeline(pipeline);
+            },
+
+            draw(frame, vertexCount, instanceCount, firstVertex, firstInstance) {
+                frame.renderPass.draw(vertexCount, instanceCount, firstVertex, firstInstance);
+            },
+
+            endFrame(ctx, frame) {
+                frame.renderPass.end();
+                frame.commandEncoder.finish();
+                ctx.queue.submit();
+            }
+        };
+
+        // ============================================================
+        // Main rendering code - IDENTICAL for both backends!
+        // ============================================================
+
+        async function main() {
+            const canvas = document.getElementById('canvas');
+            const status = document.getElementById('status');
+
+            let ctx = null;
+            let backend = null;
+
+            // Try WebGPU first
+            if (navigator.gpu) {
+                try {
+                    backend = WebGPUBackend;
+                    ctx = await backend.init(canvas);
+                    status.innerHTML = '<span class="webgpu">Using WebGPU (native)</span>';
+                    log('info', 'WebGPU backend initialized');
+                } catch (e) {
+                    log('warn', `WebGPU init failed: ${e.message}`);
+                    backend = null;
+                }
+            }
+
+            // Fall back to WebGL
+            if (!backend) {
+                try {
+                    backend = WebGLBackend;
+                    ctx = await backend.init(canvas);
+                    status.innerHTML = '<span class="webgl">Using WebGL2 (via wgpu WASM)</span>';
+                    log('info', 'WebGL backend initialized');
+                } catch (e) {
+                    status.innerHTML = `<span class="error">Failed: ${e.message}</span>`;
+                    log('error', `Both backends failed: ${e.message}`);
+                    console.error(e);
+                    return;
+                }
+            }
+
+            // ========================================
+            // This code is THE SAME for both backends!
+            // ========================================
+
+            // Create shader module (WGSL code - transpiled to GLSL for WebGL)
+            const shaderModule = backend.createShaderModule(ctx, SHADER_CODE, 'vs_main', 'fs_main');
+            log('info', 'Shader module created');
+
+            // Create render pipeline
+            const pipeline = backend.createRenderPipeline(ctx, shaderModule, 'triangle-list');
+            log('info', 'Render pipeline created');
+
+            // Clear color
+            const clearColor = { r: 0.1, g: 0.1, b: 0.15, a: 1.0 };
+
+            // Render loop
+            let frameCount = 0;
+            function render() {
+                // Begin frame
+                const frame = backend.beginFrame(ctx, clearColor);
+
+                // Set pipeline and draw
+                backend.setPipeline(frame, pipeline);
+                backend.draw(frame, 3, 1, 0, 0);
+
+                // End frame
+                backend.endFrame(ctx, frame);
+
+                frameCount++;
+                if (frameCount === 1) {
+                    log('info', 'First frame rendered!');
+                }
+
+                // requestAnimationFrame(render);
+            }
+
+            render();
+        }
+
+        main().catch(e => {
+            log('error', `Unhandled error: ${e.message}`);
+            console.error(e);
+        });
+    </script>
+</body>
+</html>

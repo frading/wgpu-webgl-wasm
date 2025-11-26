@@ -633,6 +633,7 @@ name = "wgpu-webgl-wasm"
 version = "0.1.0"
 dependencies = [
  "console_log",
+ "glow",
  "js-sys",
  "log",
  "naga",

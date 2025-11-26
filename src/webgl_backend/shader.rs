@@ -53,11 +53,16 @@ pub fn transpile_wgsl_to_glsl(
         .map_err(|e| format!("Validation error: {:?}", e))?;
 
     // Transpile to GLSL ES 300 (WebGL2)
+    // We keep ADJUST_COORDINATE_SPACE enabled because it does two things:
+    // 1. Flips Y (for wgpu-hal's framebuffer blit - we don't need this)
+    // 2. Remaps Z from WebGPU's [0,1] to OpenGL's [-1,1] (we DO need this for depth)
+    // We'll post-process the GLSL to undo just the Y-flip.
     let options = glsl::Options {
         version: glsl::Version::Embedded {
             version: 300,
             is_webgl: true,
         },
+        // Keep default which includes ADJUST_COORDINATE_SPACE
         ..Default::default()
     };
 
@@ -82,7 +87,25 @@ pub fn transpile_wgsl_to_glsl(
         .write()
         .map_err(|e| format!("GLSL write error: {:?}", e))?;
 
+    // Post-process vertex shaders to undo Y-flip while keeping Z remapping.
+    // Naga generates: gl_Position.yz = vec2(-gl_Position.y, gl_Position.z * 2.0 - gl_Position.w);
+    // We want:        gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    // This keeps the depth remapping (WebGPU [0,1] -> OpenGL [-1,1]) but removes Y-flip.
+    if stage == naga::ShaderStage::Vertex {
+        output = undo_y_flip(&output);
+    }
+
     Ok(output)
+}
+
+/// Undo the Y-flip in Naga's coordinate adjustment while keeping the Z remapping.
+/// Naga generates: `gl_Position.yz = vec2(-gl_Position.y, gl_Position.z * 2.0 - gl_Position.w);`
+/// We replace with: `gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;`
+fn undo_y_flip(glsl_source: &str) -> String {
+    glsl_source.replace(
+        "gl_Position.yz = vec2(-gl_Position.y, gl_Position.z * 2.0 - gl_Position.w);",
+        "gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;"
+    )
 }
 
 /// Create a shader module from WGSL source

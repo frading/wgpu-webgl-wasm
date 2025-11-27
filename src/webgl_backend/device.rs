@@ -15,6 +15,8 @@ pub struct GlContext {
     pub height: u32,
     /// Cache of FBOs keyed by texture handle (for render-to-texture)
     pub fbo_cache: HashMap<glow::Texture, glow::Framebuffer>,
+    /// Reference to the canvas for getting current size
+    pub canvas: HtmlCanvasElement,
 }
 
 /// Shared reference to GL context
@@ -106,6 +108,7 @@ pub fn create_device(canvas: &HtmlCanvasElement) -> Result<WDevice, JsValue> {
         width,
         height,
         fbo_cache: HashMap::new(),
+        canvas: canvas.clone(),
     }));
 
     Ok(WDevice { context })
@@ -139,11 +142,23 @@ impl WDevice {
     /// This is equivalent to GPUCanvasContext.getCurrentTexture() in WebGPU.
     #[wasm_bindgen(js_name = getSurfaceTexture)]
     pub fn get_surface_texture(&self) -> super::texture::WTexture {
-        let ctx = self.context.borrow();
+        let mut ctx = self.context.borrow_mut();
+
+        // Always read current canvas size to handle resize
+        let canvas_width = ctx.canvas.width();
+        let canvas_height = ctx.canvas.height();
+
+        // Update stored dimensions if changed
+        if ctx.width != canvas_width || ctx.height != canvas_height {
+            log::info!("Canvas resized: {}x{} -> {}x{}", ctx.width, ctx.height, canvas_width, canvas_height);
+            ctx.width = canvas_width;
+            ctx.height = canvas_height;
+        }
+
         super::texture::WTexture {
             raw: None, // None = default framebuffer
-            width: ctx.width,
-            height: ctx.height,
+            width: canvas_width,
+            height: canvas_height,
             depth_or_array_layers: 1,
             format: super::texture::WTextureFormat::Rgba8Unorm, // Canvas is typically RGBA8
             context: self.context.clone(),

@@ -9,6 +9,29 @@ use super::types::{WLoadOp, WBlendState};
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
 
+/// Index format for draw_indexed
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IndexFormat {
+    Uint16 = 0,
+    Uint32 = 1,
+}
+
+impl IndexFormat {
+    fn to_gl(self) -> u32 {
+        match self {
+            IndexFormat::Uint16 => glow::UNSIGNED_SHORT,
+            IndexFormat::Uint32 => glow::UNSIGNED_INT,
+        }
+    }
+
+    fn byte_size(self) -> u32 {
+        match self {
+            IndexFormat::Uint16 => 2,
+            IndexFormat::Uint32 => 4,
+        }
+    }
+}
+
 /// Render pass encoder - equivalent to GPURenderPassEncoder
 /// In WebGL, we execute commands immediately rather than recording them
 #[wasm_bindgen]
@@ -19,6 +42,8 @@ pub struct WRenderPassEncoder {
     current_topology: u32,
     /// Stored vertex layout from the current pipeline for configuring attributes
     current_vertex_layout: Option<StoredVertexBufferLayout>,
+    /// Current index buffer format
+    current_index_format: IndexFormat,
 }
 
 impl WRenderPassEncoder {
@@ -29,6 +54,7 @@ impl WRenderPassEncoder {
             current_vao: None,
             current_topology: glow::TRIANGLES,
             current_vertex_layout: None,
+            current_index_format: IndexFormat::Uint16,
         }
     }
 }
@@ -116,22 +142,23 @@ impl WRenderPassEncoder {
     ) {
         let ctx = self.context.borrow();
         unsafe {
-            // let offset = (first_index * 2) as i32; // assuming u16 indices
-            let offset = (first_index * 1) as i32; // assuming u32 indices
+            let index_type = self.current_index_format.to_gl();
+            let byte_offset = (first_index * self.current_index_format.byte_size()) as i32;
+
             if instance_count > 1 {
                 ctx.gl.draw_elements_instanced(
                     self.current_topology,
                     index_count as i32,
-                    glow::UNSIGNED_SHORT,
-                    offset,
+                    index_type,
+                    byte_offset,
                     instance_count as i32,
                 );
             } else {
                 ctx.gl.draw_elements(
                     self.current_topology,
                     index_count as i32,
-                    glow::UNSIGNED_SHORT,
-                    offset,
+                    index_type,
+                    byte_offset,
                 );
             }
         }
@@ -200,13 +227,21 @@ impl WRenderPassEncoder {
     /// format: index format (0 = uint16, 1 = uint32)
     /// offset: byte offset into the buffer
     #[wasm_bindgen(js_name = setIndexBuffer)]
-    pub fn set_index_buffer(&self, buffer: &WBuffer, format: u32, offset: u32) {
+    pub fn set_index_buffer(&mut self, buffer: &WBuffer, format: u32, offset: u32) {
         let ctx = self.context.borrow();
         unsafe {
             ctx.gl.bind_buffer(glow::ELEMENT_ARRAY_BUFFER, Some(buffer.raw));
-            log::debug!("Index buffer set, format {}, offset {}", format, offset);
         }
-        let _ = (format, offset); // Suppress unused warnings for now
+
+        // Store the index format for draw_indexed
+        self.current_index_format = if format == 1 {
+            IndexFormat::Uint32
+        } else {
+            IndexFormat::Uint16
+        };
+
+        log::debug!("Index buffer set, format {:?}, offset {}", self.current_index_format, offset);
+        let _ = offset; // Offset is handled in draw_indexed via first_index
     }
 
     /// Set a bind group at the given index

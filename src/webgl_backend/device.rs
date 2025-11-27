@@ -8,13 +8,21 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::HtmlCanvasElement;
 
+/// Cached FBO with its depth renderbuffer
+pub struct CachedFbo {
+    pub fbo: glow::Framebuffer,
+    pub depth_renderbuffer: glow::Renderbuffer,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Internal GL context wrapper
 pub struct GlContext {
     pub gl: glow::Context,
     pub width: u32,
     pub height: u32,
     /// Cache of FBOs keyed by texture handle (for render-to-texture)
-    pub fbo_cache: HashMap<glow::Texture, glow::Framebuffer>,
+    pub fbo_cache: HashMap<glow::Texture, CachedFbo>,
     /// Reference to the canvas for getting current size
     pub canvas: HtmlCanvasElement,
 }
@@ -92,9 +100,14 @@ pub fn create_device(canvas: &HtmlCanvasElement) -> Result<WDevice, JsValue> {
     let width = canvas.width();
     let height = canvas.height();
 
-    // Get WebGL2 context
+    // Get WebGL2 context with explicit depth buffer
+    let mut context_options = web_sys::WebGlContextAttributes::new();
+    context_options.set_depth(true);
+    context_options.set_antialias(false); // We handle MSAA ourselves if needed
+    context_options.set_stencil(true);
+
     let webgl2_context = canvas
-        .get_context("webgl2")?
+        .get_context_with_context_options("webgl2", &context_options)?
         .ok_or_else(|| JsValue::from_str("Failed to get WebGL2 context"))?
         .dyn_into::<web_sys::WebGl2RenderingContext>()?;
 

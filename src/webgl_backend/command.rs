@@ -70,6 +70,18 @@ impl WRenderPassEncoder {
             ctx.gl.use_program(Some(pipeline.program));
             ctx.gl.bind_vertex_array(Some(pipeline.vao));
 
+            // Apply depth state
+            if pipeline.depth_test_enabled {
+                ctx.gl.enable(glow::DEPTH_TEST);
+                ctx.gl.depth_func(pipeline.depth_compare.to_gl());
+                ctx.gl.depth_mask(pipeline.depth_write_enabled);
+                log::info!("Depth test enabled: compare={:?}, write={}",
+                    pipeline.depth_compare, pipeline.depth_write_enabled);
+            } else {
+                log::info!(">> Depth test NOT enabled");
+                ctx.gl.disable(glow::DEPTH_TEST);
+            }
+
             // Apply blend state
             if let Some(ref blend) = pipeline.blend_state {
                 if blend.is_enabled() {
@@ -347,8 +359,8 @@ impl WCommandEncoder {
             } else if let Some(texture) = color_view.texture_raw {
                 // Render to texture via FBO
                 // Get or create FBO for this texture
-                let fbo = if let Some(&existing_fbo) = ctx.fbo_cache.get(&texture) {
-                    existing_fbo
+                let cached = if let Some(existing) = ctx.fbo_cache.get(&texture) {
+                    existing.fbo
                 } else {
                     // Create a new FBO
                     let fbo = ctx.gl.create_framebuffer()
@@ -364,6 +376,24 @@ impl WCommandEncoder {
                         color_view.base_mip_level as i32,
                     );
 
+                    // Create and attach a depth renderbuffer
+                    let depth_rb = ctx.gl.create_renderbuffer()
+                        .expect("Failed to create depth renderbuffer");
+                    ctx.gl.bind_renderbuffer(glow::RENDERBUFFER, Some(depth_rb));
+                    ctx.gl.renderbuffer_storage(
+                        glow::RENDERBUFFER,
+                        glow::DEPTH_COMPONENT24,
+                        color_view.width as i32,
+                        color_view.height as i32,
+                    );
+                    ctx.gl.framebuffer_renderbuffer(
+                        glow::FRAMEBUFFER,
+                        glow::DEPTH_ATTACHMENT,
+                        glow::RENDERBUFFER,
+                        Some(depth_rb),
+                    );
+                    ctx.gl.bind_renderbuffer(glow::RENDERBUFFER, None);
+
                     // Check framebuffer completeness
                     let status = ctx.gl.check_framebuffer_status(glow::FRAMEBUFFER);
                     if status != glow::FRAMEBUFFER_COMPLETE {
@@ -376,17 +406,22 @@ impl WCommandEncoder {
                         };
                         log::error!("Framebuffer incomplete: status={} ({})", status, status_str);
                     } else {
-                        log::info!("Created FBO for texture, {}x{}, mip_level={}",
+                        log::info!("Created FBO with depth for texture, {}x{}, mip_level={}",
                             color_view.width, color_view.height, color_view.base_mip_level);
                     }
 
-                    // Cache the FBO
-                    ctx.fbo_cache.insert(texture, fbo);
+                    // Cache the FBO with its depth renderbuffer
+                    ctx.fbo_cache.insert(texture, super::device::CachedFbo {
+                        fbo,
+                        depth_renderbuffer: depth_rb,
+                        width: color_view.width,
+                        height: color_view.height,
+                    });
                     fbo
                 };
 
                 // Bind the FBO
-                ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+                ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(cached));
                 ctx.gl.viewport(0, 0, color_view.width as i32, color_view.height as i32);
                 log::debug!("Render pass targeting texture via FBO ({}x{})", color_view.width, color_view.height);
             } else {

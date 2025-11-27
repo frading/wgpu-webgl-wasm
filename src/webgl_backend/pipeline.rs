@@ -72,6 +72,161 @@ impl WRenderPipeline {
     }
 }
 
+/// Setup uniform block bindings for a linked program.
+/// Naga generates uniform block names like `CameraUniforms_block_0Vertex` with
+/// variables inside named `_group_1_binding_0_vs`.
+/// We need to bind these to the correct binding points so that bind_buffer_range works correctly.
+unsafe fn setup_uniform_block_bindings(gl: &glow::Context, program: glow::Program) {
+    // Get the number of uniform blocks from the program
+    let num_uniform_blocks = gl.get_program_parameter_i32(program, glow::ACTIVE_UNIFORM_BLOCKS) as u32;
+    log::info!("Program has {} uniform blocks", num_uniform_blocks);
+
+    for block_index in 0..num_uniform_blocks {
+        let block_name = gl.get_active_uniform_block_name(program, block_index);
+        let block_size = gl.get_active_uniform_block_parameter_i32(
+            program,
+            block_index,
+            glow::UNIFORM_BLOCK_DATA_SIZE,
+        );
+
+        log::info!(
+            "Uniform block {}: name='{}', size={}",
+            block_index, block_name, block_size
+        );
+
+        // Get the number of uniforms in this block
+        let num_uniforms_in_block = gl.get_active_uniform_block_parameter_i32(
+            program,
+            block_index,
+            glow::UNIFORM_BLOCK_ACTIVE_UNIFORMS,
+        ) as usize;
+
+        // Try to find group/binding info from the first uniform in this block
+        let mut found_binding = false;
+        if num_uniforms_in_block > 0 {
+            // Get the uniform indices for this block
+            let mut uniform_indices = vec![0i32; num_uniforms_in_block];
+            gl.get_active_uniform_block_parameter_i32_slice(
+                program,
+                block_index,
+                glow::UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
+                &mut uniform_indices,
+            );
+
+            // Check the first uniform's name for group/binding info
+            if let Some(&first_uniform_index) = uniform_indices.first() {
+                if first_uniform_index >= 0 {
+                    if let Some(uniform) = gl.get_active_uniform(program, first_uniform_index as u32) {
+                        log::info!("First uniform in block {}: '{}'", block_index, uniform.name);
+                        if let Some((group, binding)) = parse_group_binding_from_name(&uniform.name) {
+                            // Use group as binding point (binding within group is usually 0)
+                            let binding_point = group;
+                            gl.uniform_block_binding(program, block_index, binding_point);
+                            log::info!(
+                                "Bound uniform block '{}' (index {}) to binding point {} (group={}, binding={})",
+                                block_name, block_index, binding_point, group, binding
+                            );
+                            found_binding = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if !found_binding {
+            // Fallback: try to parse from block name
+            if let Some(binding) = parse_binding_from_block_name(&block_name) {
+                gl.uniform_block_binding(program, block_index, binding);
+                log::info!(
+                    "Bound uniform block '{}' (index {}) to binding point {} (from block name)",
+                    block_name, block_index, binding
+                );
+            } else {
+                // Last resort: use block index
+                gl.uniform_block_binding(program, block_index, block_index);
+                log::warn!(
+                    "Could not parse binding from '{}', using block index {} as binding point",
+                    block_name, block_index
+                );
+            }
+        }
+    }
+}
+
+/// Parse group and binding from a uniform name like "_group_1_binding_0_vs.worldPos"
+fn parse_group_binding_from_name(name: &str) -> Option<(u32, u32)> {
+    if let Some(group_pos) = name.find("_group_") {
+        let after_group = &name[group_pos + 7..];
+        let group_str: String = after_group.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(group) = group_str.parse::<u32>() {
+            if let Some(binding_pos) = after_group.find("_binding_") {
+                let after_binding = &after_group[binding_pos + 9..];
+                let binding_str: String = after_binding.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(binding) = binding_str.parse::<u32>() {
+                    return Some((group, binding));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Parse the group and binding index from a Naga-generated uniform block name.
+///
+/// Naga generates block names like "CameraUniforms_block_0Vertex" or "ObjectUniforms_block_1Vertex"
+/// where the number after "block_" is a sequential index.
+///
+/// The actual binding info is in the variable name inside the block: "_group_1_binding_0_vs"
+///
+/// For now, we parse the block name format: "{Name}_block_{N}Vertex" or "{Name}_block_{N}Fragment"
+/// and treat N as a sequential index. We need to query the uniform inside to get the real binding.
+///
+/// Alternative approach: parse "_group{G}_binding{B}" format if present anywhere in the name.
+fn parse_binding_from_block_name(name: &str) -> Option<u32> {
+    // First try the new Naga format: look for "_group_X_binding_Y" pattern
+    if let Some(group_pos) = name.find("_group_") {
+        let after_group = &name[group_pos + 7..]; // Skip "_group_"
+        // Extract group number
+        let group_str: String = after_group.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(group) = group_str.parse::<u32>() {
+            // Now look for "_binding_"
+            if let Some(binding_pos) = after_group.find("_binding_") {
+                let after_binding = &after_group[binding_pos + 9..]; // Skip "_binding_"
+                let binding_str: String = after_binding.chars().take_while(|c| c.is_ascii_digit()).collect();
+                if let Ok(binding) = binding_str.parse::<u32>() {
+                    // In WebGL, we flatten group+binding into a single binding point
+                    // Common approach: binding_point = group * MAX_BINDINGS_PER_GROUP + binding
+                    // But simpler: just use sequential binding points based on block index
+                    // For now, return the binding from the first group we encounter
+                    log::info!("Parsed group={}, binding={} from '{}'", group, binding, name);
+                    return Some(binding);
+                }
+            }
+        }
+    }
+
+    // Try old format: "_binding" followed by number (without underscore before number)
+    if let Some(binding_pos) = name.find("_binding") {
+        let after_binding = &name[binding_pos + 8..]; // Skip "_binding"
+        let binding_str: String = after_binding.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(binding) = binding_str.parse::<u32>() {
+            return Some(binding);
+        }
+    }
+
+    // Try parsing "block_N" format as fallback
+    if let Some(block_pos) = name.find("_block_") {
+        let after_block = &name[block_pos + 7..]; // Skip "_block_"
+        let block_str: String = after_block.chars().take_while(|c| c.is_ascii_digit()).collect();
+        if let Ok(block_idx) = block_str.parse::<u32>() {
+            log::info!("Parsed block index {} from '{}'", block_idx, name);
+            return Some(block_idx);
+        }
+    }
+
+    None
+}
+
 /// Create a render pipeline (simple version without vertex attributes)
 /// This links shaders into a program and sets up the vertex array object
 #[wasm_bindgen(js_name = createRenderPipeline)]
@@ -107,6 +262,9 @@ pub fn create_render_pipeline(
                 log
             )));
         }
+
+        // Setup uniform block bindings after linking
+        setup_uniform_block_bindings(&ctx.gl, program);
 
         // Create VAO (required for WebGL2)
         let vao = ctx
@@ -342,6 +500,9 @@ pub fn create_render_pipeline_from_descriptor(
             )));
         }
 
+        // Setup uniform block bindings after linking
+        setup_uniform_block_bindings(&ctx.gl, program);
+
         // Create VAO
         let vao = ctx
             .gl
@@ -404,6 +565,9 @@ pub fn create_render_pipeline_with_layout(
                 log
             )));
         }
+
+        // Setup uniform block bindings after linking
+        setup_uniform_block_bindings(&ctx.gl, program);
 
         // Create VAO (required for WebGL2)
         let vao = ctx

@@ -112,7 +112,11 @@ impl WBindGroup {
     ///
     /// This binds uniform buffers to their respective binding points,
     /// and textures/samplers to texture units.
-    pub(crate) fn apply(&self, gl: &glow::Context) {
+    ///
+    /// group_index: The bind group index (from setBindGroup). In WebGL, we use this
+    /// as the uniform buffer binding point since WebGL doesn't have bind groups.
+    /// The shader's uniform blocks are bound to binding points matching the group index.
+    pub(crate) fn apply(&self, gl: &glow::Context, group_index: u32) {
         for entry in &self.entries {
             match &entry.resource {
                 BoundResource::Buffer { buffer, offset, size } => {
@@ -122,15 +126,16 @@ impl WBindGroup {
                     if let Some(layout) = layout_entry {
                         match layout.binding_type {
                             WBindingType::UniformBuffer => {
-                                // Bind uniform buffer to the binding point
+                                // Use group_index as the binding point
+                                // This matches how we set up uniform block bindings in the shader
                                 log::info!(
-                                    "Binding uniform buffer: binding={}, offset={}, size={}",
-                                    entry.binding, offset, size
+                                    "Binding uniform buffer: group={}, binding={}, offset={}, size={}",
+                                    group_index, entry.binding, offset, size
                                 );
                                 unsafe {
                                     gl.bind_buffer_range(
                                         glow::UNIFORM_BUFFER,
-                                        entry.binding,
+                                        group_index, // Use group index as binding point
                                         Some(*buffer),
                                         *offset as i32,
                                         *size as i32,
@@ -150,13 +155,13 @@ impl WBindGroup {
                     } else {
                         // No layout entry found, assume uniform buffer
                         log::info!(
-                            "Binding uniform buffer (no layout): binding={}, offset={}, size={}",
-                            entry.binding, offset, size
+                            "Binding uniform buffer (no layout): group={}, binding={}, offset={}, size={}",
+                            group_index, entry.binding, offset, size
                         );
                         unsafe {
                             gl.bind_buffer_range(
                                 glow::UNIFORM_BUFFER,
-                                entry.binding,
+                                group_index, // Use group index as binding point
                                 Some(*buffer),
                                 *offset as i32,
                                 *size as i32,

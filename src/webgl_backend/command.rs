@@ -196,7 +196,8 @@ impl WRenderPassEncoder {
         let ctx = self.context.borrow();
 
         // Apply the bind group's bindings to GL state
-        bind_group.apply(&ctx.gl);
+        // Pass group_index so uniform buffers are bound to the correct binding point
+        bind_group.apply(&ctx.gl, group_index);
 
         log::debug!("Bind group {} set with {} entries",
             group_index, bind_group.entries.len());

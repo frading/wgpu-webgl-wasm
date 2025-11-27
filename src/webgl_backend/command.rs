@@ -5,7 +5,7 @@ use super::buffer::WBuffer;
 use super::device::GlContextRef;
 use super::pipeline::{WRenderPipeline, StoredVertexBufferLayout};
 use super::texture::WTextureView;
-use super::types::{WLoadOp, WBlendState};
+use super::types::WLoadOp;
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
 
@@ -40,8 +40,9 @@ pub struct WRenderPassEncoder {
     current_pipeline: Option<glow::Program>,
     current_vao: Option<glow::VertexArray>,
     current_topology: u32,
-    /// Stored vertex layout from the current pipeline for configuring attributes
-    current_vertex_layout: Option<StoredVertexBufferLayout>,
+    /// Stored vertex layouts from the current pipeline for configuring attributes
+    /// Index corresponds to vertex buffer slot
+    current_vertex_layouts: Vec<StoredVertexBufferLayout>,
     /// Current index buffer format
     current_index_format: IndexFormat,
 }
@@ -53,7 +54,7 @@ impl WRenderPassEncoder {
             current_pipeline: None,
             current_vao: None,
             current_topology: glow::TRIANGLES,
-            current_vertex_layout: None,
+            current_vertex_layouts: Vec::new(),
             current_index_format: IndexFormat::Uint16,
         }
     }
@@ -95,8 +96,8 @@ impl WRenderPassEncoder {
         self.current_pipeline = Some(pipeline.program);
         self.current_vao = Some(pipeline.vao);
         self.current_topology = pipeline.topology.to_gl();
-        // Store the vertex layout for use when setVertexBuffer is called
-        self.current_vertex_layout = pipeline.vertex_layout.clone();
+        // Store all vertex layouts for use when setVertexBuffer is called
+        self.current_vertex_layouts = pipeline.vertex_layouts.clone();
     }
 
     /// Draw primitives
@@ -197,25 +198,25 @@ impl WRenderPassEncoder {
 
             // Configure vertex attributes now that the buffer is bound
             // In WebGL, glVertexAttribPointer captures the currently bound GL_ARRAY_BUFFER
-            if let Some(ref layout) = self.current_vertex_layout {
-                // Only configure attributes for slot 0 for now (single vertex buffer)
-                if slot == 0 {
-                    for attr in &layout.attributes {
-                        ctx.gl.enable_vertex_attrib_array(attr.location);
-                        ctx.gl.vertex_attrib_pointer_f32(
-                            attr.location,
-                            attr.format.components(),
-                            attr.format.gl_type(),
-                            false, // normalized
-                            layout.stride as i32,
-                            (attr.offset + offset) as i32,
-                        );
-                        log::debug!(
-                            "Configured vertex attribute {}: offset={}, components={}, stride={}",
-                            attr.location, attr.offset + offset, attr.format.components(), layout.stride
-                        );
-                    }
+            // Look up the layout for this specific slot
+            if let Some(layout) = self.current_vertex_layouts.get(slot as usize) {
+                for attr in &layout.attributes {
+                    ctx.gl.enable_vertex_attrib_array(attr.location);
+                    ctx.gl.vertex_attrib_pointer_f32(
+                        attr.location,
+                        attr.format.components(),
+                        attr.format.gl_type(),
+                        false, // normalized
+                        layout.stride as i32,
+                        (attr.offset + offset) as i32,
+                    );
+                    log::debug!(
+                        "Configured vertex attribute {} for slot {}: offset={}, components={}, stride={}",
+                        attr.location, slot, attr.offset + offset, attr.format.components(), layout.stride
+                    );
                 }
+            } else {
+                log::warn!("No vertex layout found for slot {}", slot);
             }
 
             log::debug!("Vertex buffer set at slot {}, offset {}", slot, offset);

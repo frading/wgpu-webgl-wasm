@@ -28,8 +28,9 @@ pub struct WRenderPipeline {
     pub(crate) program: glow::Program,
     pub(crate) vao: glow::VertexArray,
     pub(crate) topology: WPrimitiveTopology,
-    /// Stored vertex layout for configuring attributes when buffer is bound
-    pub(crate) vertex_layout: Option<StoredVertexBufferLayout>,
+    /// Stored vertex layouts for configuring attributes when buffers are bound
+    /// Index corresponds to the vertex buffer slot
+    pub(crate) vertex_layouts: Vec<StoredVertexBufferLayout>,
     // Rasterization state
     pub(crate) cull_mode: WCullMode,
     pub(crate) front_face: WFrontFace,
@@ -281,7 +282,7 @@ pub fn create_render_pipeline(
             program,
             vao,
             topology,
-            vertex_layout: None,
+            vertex_layouts: Vec::new(),
             cull_mode: WCullMode::None,
             front_face: WFrontFace::Ccw,
             depth_test_enabled: false,
@@ -530,18 +531,23 @@ pub fn create_render_pipeline_from_descriptor(
             .create_vertex_array()
             .map_err(|e| JsValue::from_str(&format!("Failed to create VAO: {}", e)))?;
 
-        // Get the first vertex layout if any
-        let vertex_layout = descriptor.vertex_layouts.first().cloned();
-
         log::info!("Render pipeline created with {} vertex buffer layouts, blend={:?}",
             descriptor.vertex_layouts.len(), descriptor.blend_state.is_some());
+
+        // Log details about each vertex layout
+        for (i, layout) in descriptor.vertex_layouts.iter().enumerate() {
+            log::info!("  Layout {}: stride={}, {} attributes", i, layout.stride, layout.attributes.len());
+            for attr in &layout.attributes {
+                log::info!("    Attribute location={}, offset={}, format={:?}", attr.location, attr.offset, attr.format);
+            }
+        }
 
         Ok(WRenderPipeline {
             context: context.clone(),
             program,
             vao,
             topology: descriptor.topology,
-            vertex_layout,
+            vertex_layouts: descriptor.vertex_layouts.clone(),
             cull_mode: descriptor.cull_mode,
             front_face: descriptor.front_face,
             depth_test_enabled: descriptor.depth_test_enabled,
@@ -619,7 +625,7 @@ pub fn create_render_pipeline_with_layout(
             program,
             vao,
             topology,
-            vertex_layout: Some(stored_layout),
+            vertex_layouts: vec![stored_layout],
             cull_mode: WCullMode::None,
             front_face: WFrontFace::Ccw,
             depth_test_enabled: false,

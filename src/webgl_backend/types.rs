@@ -193,3 +193,113 @@ impl WShaderStage {
         }
     }
 }
+
+/// Blend factor - maps to WebGPU GPUBlendFactor
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum WBlendFactor {
+    #[default]
+    Zero = 0,
+    One = 1,
+    Src = 2,
+    OneMinusSrc = 3,
+    SrcAlpha = 4,
+    OneMinusSrcAlpha = 5,
+    Dst = 6,
+    OneMinusDst = 7,
+    DstAlpha = 8,
+    OneMinusDstAlpha = 9,
+    SrcAlphaSaturated = 10,
+    Constant = 11,
+    OneMinusConstant = 12,
+}
+
+impl WBlendFactor {
+    pub fn to_gl(self) -> u32 {
+        match self {
+            WBlendFactor::Zero => glow::ZERO,
+            WBlendFactor::One => glow::ONE,
+            WBlendFactor::Src => glow::SRC_COLOR,
+            WBlendFactor::OneMinusSrc => glow::ONE_MINUS_SRC_COLOR,
+            WBlendFactor::SrcAlpha => glow::SRC_ALPHA,
+            WBlendFactor::OneMinusSrcAlpha => glow::ONE_MINUS_SRC_ALPHA,
+            WBlendFactor::Dst => glow::DST_COLOR,
+            WBlendFactor::OneMinusDst => glow::ONE_MINUS_DST_COLOR,
+            WBlendFactor::DstAlpha => glow::DST_ALPHA,
+            WBlendFactor::OneMinusDstAlpha => glow::ONE_MINUS_DST_ALPHA,
+            WBlendFactor::SrcAlphaSaturated => glow::SRC_ALPHA_SATURATE,
+            WBlendFactor::Constant => glow::CONSTANT_COLOR,
+            WBlendFactor::OneMinusConstant => glow::ONE_MINUS_CONSTANT_COLOR,
+        }
+    }
+}
+
+/// Blend operation - maps to WebGPU GPUBlendOperation
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum WBlendOperation {
+    #[default]
+    Add = 0,
+    Subtract = 1,
+    ReverseSubtract = 2,
+    Min = 3,
+    Max = 4,
+}
+
+impl WBlendOperation {
+    pub fn to_gl(self) -> u32 {
+        match self {
+            WBlendOperation::Add => glow::FUNC_ADD,
+            WBlendOperation::Subtract => glow::FUNC_SUBTRACT,
+            WBlendOperation::ReverseSubtract => glow::FUNC_REVERSE_SUBTRACT,
+            WBlendOperation::Min => glow::MIN,
+            WBlendOperation::Max => glow::MAX,
+        }
+    }
+}
+
+/// Blend component - describes how to blend either color or alpha
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WBlendComponent {
+    pub operation: WBlendOperation,
+    pub src_factor: WBlendFactor,
+    pub dst_factor: WBlendFactor,
+}
+
+#[wasm_bindgen]
+impl WBlendComponent {
+    #[wasm_bindgen(constructor)]
+    pub fn new(operation: WBlendOperation, src_factor: WBlendFactor, dst_factor: WBlendFactor) -> Self {
+        Self { operation, src_factor, dst_factor }
+    }
+}
+
+/// Blend state - describes blending for a color attachment
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct WBlendState {
+    pub color: WBlendComponent,
+    pub alpha: WBlendComponent,
+}
+
+#[wasm_bindgen]
+impl WBlendState {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        color_op: WBlendOperation, color_src: WBlendFactor, color_dst: WBlendFactor,
+        alpha_op: WBlendOperation, alpha_src: WBlendFactor, alpha_dst: WBlendFactor,
+    ) -> Self {
+        Self {
+            color: WBlendComponent { operation: color_op, src_factor: color_src, dst_factor: color_dst },
+            alpha: WBlendComponent { operation: alpha_op, src_factor: alpha_src, dst_factor: alpha_dst },
+        }
+    }
+
+    /// Check if blending is enabled (not just overwrite)
+    pub fn is_enabled(&self) -> bool {
+        // Blending is effectively disabled if both src=One, dst=Zero
+        !(self.color.src_factor == WBlendFactor::One && self.color.dst_factor == WBlendFactor::Zero &&
+          self.alpha.src_factor == WBlendFactor::One && self.alpha.dst_factor == WBlendFactor::Zero)
+    }
+}

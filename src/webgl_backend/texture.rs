@@ -112,6 +112,8 @@ impl WTexture {
             array_layer_count: 1,
             context: self.context.clone(),
             is_surface_texture: self.is_surface_texture,
+            width: self.width,
+            height: self.height,
         }
     }
 
@@ -136,6 +138,8 @@ impl WTexture {
             array_layer_count,
             context: self.context.clone(),
             is_surface_texture: self.is_surface_texture,
+            width: self.width,
+            height: self.height,
         }
     }
 }
@@ -155,6 +159,10 @@ pub struct WTextureView {
     pub(crate) array_layer_count: u32,
     pub(crate) context: GlContextRef,
     pub(crate) is_surface_texture: bool,
+    /// Width of the texture (needed for viewport)
+    pub(crate) width: u32,
+    /// Height of the texture (needed for viewport)
+    pub(crate) height: u32,
 }
 
 impl WTextureView {
@@ -317,37 +325,27 @@ pub fn create_texture(
 
         ctx.gl.bind_texture(target, Some(texture));
 
-        let internal_format = format.gl_internal_format() as i32;
+        let internal_format = format.gl_internal_format();
         let gl_format = format.gl_format();
         let gl_type = format.gl_type();
 
         match target {
             glow::TEXTURE_2D => {
                 // Allocate storage for 2D texture with mipmaps
-                if sample_count > 1 {
-                    // Multisampled texture (renderbuffer would be more appropriate but this works)
-                    ctx.gl.tex_storage_2d(
-                        target,
-                        mip_level_count as i32,
-                        internal_format as u32,
-                        width as i32,
-                        height as i32,
-                    );
-                } else {
-                    ctx.gl.tex_storage_2d(
-                        target,
-                        mip_level_count as i32,
-                        internal_format as u32,
-                        width as i32,
-                        height as i32,
-                    );
-                }
+                ctx.gl.tex_storage_2d(
+                    target,
+                    mip_level_count as i32,
+                    internal_format,
+                    width as i32,
+                    height as i32,
+                );
+                let _ = sample_count; // For future multisampling support
             }
             glow::TEXTURE_2D_ARRAY => {
                 ctx.gl.tex_storage_3d(
                     target,
                     mip_level_count as i32,
-                    internal_format as u32,
+                    internal_format,
                     width as i32,
                     height as i32,
                     depth_or_array_layers as i32,
@@ -357,7 +355,7 @@ pub fn create_texture(
                 ctx.gl.tex_storage_3d(
                     target,
                     mip_level_count as i32,
-                    internal_format as u32,
+                    internal_format,
                     width as i32,
                     height as i32,
                     depth_or_array_layers as i32,
@@ -375,8 +373,10 @@ pub fn create_texture(
         ctx.gl.bind_texture(target, None);
 
         log::info!(
-            "Texture created: {}x{}x{}, format={:?}, dimension={:?}, mips={}",
-            width, height, depth_or_array_layers, format, dimension, mip_level_count
+            "Texture created: {}x{}x{}, format={:?} (internal={}, glFormat={}, glType={}), dimension={:?}, mips={}, usage={}",
+            width, height, depth_or_array_layers, format,
+            internal_format, gl_format, gl_type,
+            dimension, mip_level_count, _usage
         );
 
         Ok(WTexture {

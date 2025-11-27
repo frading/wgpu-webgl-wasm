@@ -5,7 +5,7 @@ use super::buffer::WBuffer;
 use super::device::GlContextRef;
 use super::pipeline::{WRenderPipeline, StoredVertexBufferLayout};
 use super::texture::WTextureView;
-use super::types::WLoadOp;
+use super::types::{WLoadOp, WBlendState};
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
 
@@ -42,6 +42,29 @@ impl WRenderPassEncoder {
         unsafe {
             ctx.gl.use_program(Some(pipeline.program));
             ctx.gl.bind_vertex_array(Some(pipeline.vao));
+
+            // Apply blend state
+            if let Some(ref blend) = pipeline.blend_state {
+                if blend.is_enabled() {
+                    ctx.gl.enable(glow::BLEND);
+                    ctx.gl.blend_func_separate(
+                        blend.color.src_factor.to_gl(),
+                        blend.color.dst_factor.to_gl(),
+                        blend.alpha.src_factor.to_gl(),
+                        blend.alpha.dst_factor.to_gl(),
+                    );
+                    ctx.gl.blend_equation_separate(
+                        blend.color.operation.to_gl(),
+                        blend.alpha.operation.to_gl(),
+                    );
+                    log::debug!("Blend enabled: src={:?}, dst={:?}",
+                        blend.color.src_factor, blend.color.dst_factor);
+                } else {
+                    ctx.gl.disable(glow::BLEND);
+                }
+            } else {
+                ctx.gl.disable(glow::BLEND);
+            }
         }
         self.current_pipeline = Some(pipeline.program);
         self.current_vao = Some(pipeline.vao);
@@ -197,7 +220,8 @@ impl WRenderPassEncoder {
 
         // Apply the bind group's bindings to GL state
         // Pass group_index so uniform buffers are bound to the correct binding point
-        bind_group.apply(&ctx.gl, group_index);
+        // Also pass the current program so we can set sampler uniforms
+        bind_group.apply_with_program(&ctx.gl, group_index, self.current_pipeline);
 
         log::debug!("Bind group {} set with {} entries",
             group_index, bind_group.entries.len());
@@ -260,7 +284,7 @@ impl WCommandEncoder {
     ///
     /// This is the full version that accepts a texture view as the render target.
     /// If the texture view is a surface texture (default framebuffer), we render
-    /// directly to the canvas. Otherwise, we would set up an FBO (not yet implemented).
+    /// directly to the canvas. Otherwise, we set up an FBO for render-to-texture.
     ///
     /// color_view: the texture view to render to
     /// clear_r, clear_g, clear_b, clear_a: clear color (used if load_op is Clear)
@@ -275,7 +299,8 @@ impl WCommandEncoder {
         clear_a: f32,
         load_op: WLoadOp,
     ) -> WRenderPassEncoder {
-        let ctx = self.context.borrow();
+        // Need mutable borrow for FBO cache
+        let mut ctx = self.context.borrow_mut();
 
         unsafe {
             if color_view.is_surface() {
@@ -283,10 +308,54 @@ impl WCommandEncoder {
                 ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
                 ctx.gl.viewport(0, 0, ctx.width as i32, ctx.height as i32);
                 log::debug!("Render pass targeting surface (default framebuffer)");
+            } else if let Some(texture) = color_view.texture_raw {
+                // Render to texture via FBO
+                // Get or create FBO for this texture
+                let fbo = if let Some(&existing_fbo) = ctx.fbo_cache.get(&texture) {
+                    existing_fbo
+                } else {
+                    // Create a new FBO
+                    let fbo = ctx.gl.create_framebuffer()
+                        .expect("Failed to create framebuffer");
+
+                    // Bind and attach the texture
+                    ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+                    ctx.gl.framebuffer_texture_2d(
+                        glow::FRAMEBUFFER,
+                        glow::COLOR_ATTACHMENT0,
+                        glow::TEXTURE_2D,
+                        Some(texture),
+                        color_view.base_mip_level as i32,
+                    );
+
+                    // Check framebuffer completeness
+                    let status = ctx.gl.check_framebuffer_status(glow::FRAMEBUFFER);
+                    if status != glow::FRAMEBUFFER_COMPLETE {
+                        let status_str = match status {
+                            glow::FRAMEBUFFER_INCOMPLETE_ATTACHMENT => "INCOMPLETE_ATTACHMENT",
+                            glow::FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT => "INCOMPLETE_MISSING_ATTACHMENT",
+                            glow::FRAMEBUFFER_INCOMPLETE_DIMENSIONS => "INCOMPLETE_DIMENSIONS",
+                            glow::FRAMEBUFFER_UNSUPPORTED => "UNSUPPORTED",
+                            _ => "UNKNOWN",
+                        };
+                        log::error!("Framebuffer incomplete: status={} ({})", status, status_str);
+                    } else {
+                        log::info!("Created FBO for texture, {}x{}, mip_level={}",
+                            color_view.width, color_view.height, color_view.base_mip_level);
+                    }
+
+                    // Cache the FBO
+                    ctx.fbo_cache.insert(texture, fbo);
+                    fbo
+                };
+
+                // Bind the FBO
+                ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, Some(fbo));
+                ctx.gl.viewport(0, 0, color_view.width as i32, color_view.height as i32);
+                log::debug!("Render pass targeting texture via FBO ({}x{})", color_view.width, color_view.height);
             } else {
-                // TODO: Set up FBO for rendering to texture
-                // For now, we only support surface texture
-                log::warn!("Rendering to non-surface texture not yet implemented, using default framebuffer");
+                // No texture and not surface - shouldn't happen, fallback to default
+                log::warn!("TextureView has no texture and is not surface, using default framebuffer");
                 ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
                 ctx.gl.viewport(0, 0, ctx.width as i32, ctx.height as i32);
             }
@@ -295,10 +364,11 @@ impl WCommandEncoder {
             if load_op == WLoadOp::Clear {
                 ctx.gl.clear_color(clear_r, clear_g, clear_b, clear_a);
                 ctx.gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+                log::info!("Cleared with color ({}, {}, {}, {})", clear_r, clear_g, clear_b, clear_a);
             }
         }
 
-        log::debug!("Render pass begun with view");
+        log::info!("Render pass begun with view, is_surface={}", color_view.is_surface());
         WRenderPassEncoder::new(self.context.clone())
     }
 

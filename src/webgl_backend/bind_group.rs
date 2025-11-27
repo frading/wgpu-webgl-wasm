@@ -108,15 +108,18 @@ pub struct WBindGroup {
 }
 
 impl WBindGroup {
-    /// Apply this bind group's bindings to the GL state
+    /// Apply this bind group's bindings to the GL state with program for sampler uniforms
     ///
     /// This binds uniform buffers to their respective binding points,
-    /// and textures/samplers to texture units.
+    /// and textures/samplers to texture units. For textures, it also sets the
+    /// sampler uniform in the shader to point to the correct texture unit.
     ///
     /// group_index: The bind group index (from setBindGroup). In WebGL, we use this
     /// as the uniform buffer binding point since WebGL doesn't have bind groups.
     /// The shader's uniform blocks are bound to binding points matching the group index.
-    pub(crate) fn apply(&self, gl: &glow::Context, group_index: u32) {
+    ///
+    /// program: The currently bound program, used to set sampler uniforms.
+    pub(crate) fn apply_with_program(&self, gl: &glow::Context, group_index: u32, program: Option<glow::Program>) {
         for entry in &self.entries {
             match &entry.resource {
                 BoundResource::Buffer { buffer, offset, size } => {
@@ -176,11 +179,30 @@ impl WBindGroup {
                     log::debug!("Bound sampler to texture unit {}", entry.binding);
                 }
                 BoundResource::Texture { texture, target } => {
+                    let texture_unit = entry.binding;
                     unsafe {
-                        gl.active_texture(glow::TEXTURE0 + entry.binding);
+                        gl.active_texture(glow::TEXTURE0 + texture_unit);
                         gl.bind_texture(*target, Some(*texture));
+
+                        // Set sampler uniform if we have a program
+                        if let Some(prog) = program {
+                            // Try to find the sampler uniform for this binding
+                            // Naga generates names like "_group_0_binding_0_fs" for fragment samplers
+                            let sampler_names = [
+                                format!("_group_{}_binding_{}_fs", group_index, entry.binding),
+                                format!("_group_{}_binding_{}_vs", group_index, entry.binding),
+                            ];
+
+                            for name in &sampler_names {
+                                if let Some(location) = gl.get_uniform_location(prog, name) {
+                                    gl.uniform_1_i32(Some(&location), texture_unit as i32);
+                                    log::info!("Set sampler uniform '{}' to texture unit {}", name, texture_unit);
+                                    break;
+                                }
+                            }
+                        }
                     }
-                    log::debug!("Bound texture to texture unit {}", entry.binding);
+                    log::info!("Bound texture {:?} to texture unit {}", texture, texture_unit);
                 }
                 BoundResource::TextureSampler { texture, sampler, target } => {
                     unsafe {

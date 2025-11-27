@@ -2,6 +2,7 @@
 
 use glow::HasContext;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
@@ -12,6 +13,8 @@ pub struct GlContext {
     pub gl: glow::Context,
     pub width: u32,
     pub height: u32,
+    /// Cache of FBOs keyed by texture handle (for render-to-texture)
+    pub fbo_cache: HashMap<glow::Texture, glow::Framebuffer>,
 }
 
 /// Shared reference to GL context
@@ -98,7 +101,12 @@ pub fn create_device(canvas: &HtmlCanvasElement) -> Result<WDevice, JsValue> {
 
     log::info!("WebGL2 device created ({}x{})", width, height);
 
-    let context = Rc::new(RefCell::new(GlContext { gl, width, height }));
+    let context = Rc::new(RefCell::new(GlContext {
+        gl,
+        width,
+        height,
+        fbo_cache: HashMap::new(),
+    }));
 
     Ok(WDevice { context })
 }

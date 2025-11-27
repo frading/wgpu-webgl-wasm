@@ -2,7 +2,7 @@
 
 use super::device::GlContextRef;
 use super::shader::WShaderModule;
-use super::types::{WPrimitiveTopology, WVertexFormat};
+use super::types::{WPrimitiveTopology, WVertexFormat, WBlendState, WBlendFactor, WBlendOperation, WBlendComponent};
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
 
@@ -37,6 +37,8 @@ pub struct WRenderPipeline {
     pub(crate) depth_test_enabled: bool,
     pub(crate) depth_write_enabled: bool,
     pub(crate) depth_compare: WCompareFunction,
+    // Blend state
+    pub(crate) blend_state: Option<WBlendState>,
 }
 
 impl Drop for WRenderPipeline {
@@ -285,6 +287,7 @@ pub fn create_render_pipeline(
             depth_test_enabled: false,
             depth_write_enabled: false,
             depth_compare: WCompareFunction::Less,
+            blend_state: None,
         })
     }
 }
@@ -409,6 +412,8 @@ pub struct WRenderPipelineDescriptor {
     depth_compare: WCompareFunction,
     // Vertex layouts (up to 4)
     vertex_layouts: Vec<StoredVertexBufferLayout>,
+    // Blend state
+    blend_state: Option<WBlendState>,
 }
 
 #[wasm_bindgen]
@@ -423,6 +428,7 @@ impl WRenderPipelineDescriptor {
             depth_write_enabled: false,
             depth_compare: WCompareFunction::Less,
             vertex_layouts: Vec::new(),
+            blend_state: None,
         }
     }
 
@@ -441,6 +447,21 @@ impl WRenderPipelineDescriptor {
         self.depth_test_enabled = enabled;
         self.depth_write_enabled = write_enabled;
         self.depth_compare = compare;
+    }
+
+    /// Set blend state for the color attachment
+    #[wasm_bindgen(js_name = setBlendState)]
+    pub fn set_blend_state(
+        &mut self,
+        color_op: WBlendOperation, color_src: WBlendFactor, color_dst: WBlendFactor,
+        alpha_op: WBlendOperation, alpha_src: WBlendFactor, alpha_dst: WBlendFactor,
+    ) {
+        self.blend_state = Some(WBlendState {
+            color: WBlendComponent { operation: color_op, src_factor: color_src, dst_factor: color_dst },
+            alpha: WBlendComponent { operation: alpha_op, src_factor: alpha_src, dst_factor: alpha_dst },
+        });
+        log::info!("Set blend state: color({:?}, {:?}, {:?}), alpha({:?}, {:?}, {:?})",
+            color_op, color_src, color_dst, alpha_op, alpha_src, alpha_dst);
     }
 
     #[wasm_bindgen(js_name = addVertexBufferLayout)]
@@ -512,7 +533,8 @@ pub fn create_render_pipeline_from_descriptor(
         // Get the first vertex layout if any
         let vertex_layout = descriptor.vertex_layouts.first().cloned();
 
-        log::info!("Render pipeline created with {} vertex buffer layouts", descriptor.vertex_layouts.len());
+        log::info!("Render pipeline created with {} vertex buffer layouts, blend={:?}",
+            descriptor.vertex_layouts.len(), descriptor.blend_state.is_some());
 
         Ok(WRenderPipeline {
             context: context.clone(),
@@ -525,6 +547,7 @@ pub fn create_render_pipeline_from_descriptor(
             depth_test_enabled: descriptor.depth_test_enabled,
             depth_write_enabled: descriptor.depth_write_enabled,
             depth_compare: descriptor.depth_compare,
+            blend_state: descriptor.blend_state,
         })
     }
 }
@@ -602,6 +625,7 @@ pub fn create_render_pipeline_with_layout(
             depth_test_enabled: false,
             depth_write_enabled: false,
             depth_compare: WCompareFunction::Less,
+            blend_state: None,
         })
     }
 }

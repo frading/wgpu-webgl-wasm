@@ -90,7 +90,11 @@ pub fn transpile_wgsl_to_glsl(
     // Post-process vertex shaders to undo Y-flip while keeping Z remapping.
     // Naga generates: gl_Position.yz = vec2(-gl_Position.y, gl_Position.z * 2.0 - gl_Position.w);
     // We want:        gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
-    // This keeps the depth remapping (WebGPU [0,1] -> OpenGL [-1,1]) but removes Y-flip.
+    //
+    // We remove the Y-flip because:
+    // - WebGPU and OpenGL both have Y+ pointing up in clip space
+    // - The Y-flip was intended for wgpu-hal's internal framebuffer handling
+    // - We handle the FBO Y-flip at the texture sampling level instead
     if stage == naga::ShaderStage::Vertex {
         output = undo_y_flip(&output);
     }

@@ -358,6 +358,8 @@ impl WCommandEncoder {
                 log::debug!("Render pass targeting surface (default framebuffer)");
             } else if let Some(texture) = color_view.texture_raw {
                 // Render to texture via FBO
+                // We flip the viewport Y to account for OpenGL's bottom-left texture origin.
+                // This makes the FBO content match WebGPU's top-left origin convention.
                 // Get or create FBO for this texture
                 let cached = if let Some(existing) = ctx.fbo_cache.get(&texture) {
                     existing.fbo

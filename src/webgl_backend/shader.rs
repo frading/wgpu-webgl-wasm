@@ -169,8 +169,8 @@ pub fn create_shader_module(
         }
 
         log::info!("Shader module created successfully");
-        log::info!("Vertex GLSL:\n{}", vertex_glsl);
-        log::info!("Fragment GLSL:\n{}", fragment_glsl);
+        // log::info!("Vertex GLSL:\n{}", vertex_glsl);
+        // log::info!("Fragment GLSL:\n{}", fragment_glsl);
 
         Ok(WShaderModule {
             context: context.clone(),

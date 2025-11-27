@@ -2,16 +2,19 @@
 name = "wgpu-webgl-wasm"
 version = "0.1.0"
 edition = "2021"
-description = "WASM bridge for wgpu with WebGL2 backend"
+description = "WASM bridge providing WebGL2 fallback for WebGPU applications"
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-wgpu-core = { version = "27.0.3", default-features = false, features = ["wgsl", "gles"] }
-wgpu-hal = { version = "27.0.4", default-features = false, features = ["gles"] }
-wgpu-types = { version = "27.0.1", default-features = false, features = ["web"] }
+# Shader transpilation (WGSL -> GLSL ES 300)
 naga = { version = "27.0.3", default-features = false, features = ["wgsl-in", "glsl-out"] }
+
+# WebGL2 bindings
+glow = "0.16"
+
+# WASM/JS interop
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = [
     "Window",
@@ -21,9 +24,14 @@ web-sys = { version = "0.3", features = [
     "OffscreenCanvas",
 ] }
 js-sys = "0.3"
-glow = "0.16"
+
+# Logging
 log = "0.4"
 console_log = "1"
+
+# Note: wgpu-core and wgpu-hal are NOT needed.
+# We only use naga (which they also use internally) for shader transpilation,
+# and glow for WebGL2 bindings. This keeps the WASM binary smaller.
 
 [profile.release]
 opt-level = "s"

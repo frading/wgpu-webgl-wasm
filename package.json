@@ -4,10 +4,12 @@
   "description": "A WASM module that provides WebGPU-like functionality via WebGL2, using wgpu's GLES backend and Naga for WGSL→GLSL transpilation.",
   "type": "module",
   "scripts": {
+    "claude": "node node_modules/@anthropic-ai/claude-code/cli.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "sync_to_polygon":"cp pkg/* ../../../games/polygon/src/javascript/webGL/wasm/",
     "build:wasm": "cargo build --target wasm32-unknown-unknown && wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/debug/wgpu_webgl_wasm.wasm",
     "build:wasm:release": "cargo build --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg target/wasm32-unknown-unknown/release/wgpu_webgl_wasm.wasm"
   },
@@ -23,6 +25,7 @@
   },
   "homepage": "https://github.com/frading/wgpu-webgl-wasm#readme",
   "devDependencies": {
+    "@anthropic-ai/claude-code": "^2.0.54",
     "@webgpu/types": "^0.1.66",
     "typescript": "^5.9.3",
     "vite": "^7.2.4"

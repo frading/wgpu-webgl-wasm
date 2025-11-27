@@ -1,8 +1,10 @@
 //! Command encoding and render pass
 
+use super::bind_group::WBindGroup;
 use super::buffer::WBuffer;
 use super::device::GlContextRef;
 use super::pipeline::{WRenderPipeline, StoredVertexBufferLayout};
+use super::texture::WTextureView;
 use super::types::WLoadOp;
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
@@ -91,7 +93,8 @@ impl WRenderPassEncoder {
     ) {
         let ctx = self.context.borrow();
         unsafe {
-            let offset = (first_index * 2) as i32; // assuming u16 indices
+            // let offset = (first_index * 2) as i32; // assuming u16 indices
+            let offset = (first_index * 1) as i32; // assuming u32 indices
             if instance_count > 1 {
                 ctx.gl.draw_elements_instanced(
                     self.current_topology,
@@ -183,6 +186,22 @@ impl WRenderPassEncoder {
         let _ = (format, offset); // Suppress unused warnings for now
     }
 
+    /// Set a bind group at the given index
+    ///
+    /// group_index: the bind group slot (0-3 typically)
+    /// bind_group: the bind group to set
+    /// dynamic_offsets: optional dynamic offsets (not yet supported)
+    #[wasm_bindgen(js_name = setBindGroup)]
+    pub fn set_bind_group(&self, group_index: u32, bind_group: &WBindGroup) {
+        let ctx = self.context.borrow();
+
+        // Apply the bind group's bindings to GL state
+        bind_group.apply(&ctx.gl);
+
+        log::debug!("Bind group {} set with {} entries",
+            group_index, bind_group.entries.len());
+    }
+
     /// End the render pass
     pub fn end(&self) {
         let ctx = self.context.borrow();
@@ -204,7 +223,7 @@ pub struct WCommandEncoder {
 
 #[wasm_bindgen]
 impl WCommandEncoder {
-    /// Begin a render pass
+    /// Begin a render pass (simple version without texture view)
     /// clear_r, clear_g, clear_b, clear_a: clear color (used if load_op is Clear)
     /// load_op: whether to clear or load existing content
     #[wasm_bindgen(js_name = beginRenderPass)]
@@ -219,6 +238,9 @@ impl WCommandEncoder {
         let ctx = self.context.borrow();
 
         unsafe {
+            // Bind default framebuffer
+            ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+
             // Set viewport to canvas size
             ctx.gl.viewport(0, 0, ctx.width as i32, ctx.height as i32);
 
@@ -230,6 +252,52 @@ impl WCommandEncoder {
         }
 
         log::debug!("Render pass begun");
+        WRenderPassEncoder::new(self.context.clone())
+    }
+
+    /// Begin a render pass with a color attachment texture view
+    ///
+    /// This is the full version that accepts a texture view as the render target.
+    /// If the texture view is a surface texture (default framebuffer), we render
+    /// directly to the canvas. Otherwise, we would set up an FBO (not yet implemented).
+    ///
+    /// color_view: the texture view to render to
+    /// clear_r, clear_g, clear_b, clear_a: clear color (used if load_op is Clear)
+    /// load_op: whether to clear or load existing content
+    #[wasm_bindgen(js_name = beginRenderPassWithView)]
+    pub fn begin_render_pass_with_view(
+        &self,
+        color_view: &WTextureView,
+        clear_r: f32,
+        clear_g: f32,
+        clear_b: f32,
+        clear_a: f32,
+        load_op: WLoadOp,
+    ) -> WRenderPassEncoder {
+        let ctx = self.context.borrow();
+
+        unsafe {
+            if color_view.is_surface() {
+                // Render to default framebuffer (canvas)
+                ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                ctx.gl.viewport(0, 0, ctx.width as i32, ctx.height as i32);
+                log::debug!("Render pass targeting surface (default framebuffer)");
+            } else {
+                // TODO: Set up FBO for rendering to texture
+                // For now, we only support surface texture
+                log::warn!("Rendering to non-surface texture not yet implemented, using default framebuffer");
+                ctx.gl.bind_framebuffer(glow::FRAMEBUFFER, None);
+                ctx.gl.viewport(0, 0, ctx.width as i32, ctx.height as i32);
+            }
+
+            // Clear if requested
+            if load_op == WLoadOp::Clear {
+                ctx.gl.clear_color(clear_r, clear_g, clear_b, clear_a);
+                ctx.gl.clear(glow::COLOR_BUFFER_BIT | glow::DEPTH_BUFFER_BIT);
+            }
+        }
+
+        log::debug!("Render pass begun with view");
         WRenderPassEncoder::new(self.context.clone())
     }
 

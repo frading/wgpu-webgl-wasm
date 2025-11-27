@@ -56,15 +56,26 @@ impl WQueue {
     /// Write data to a buffer
     #[wasm_bindgen(js_name = writeBuffer)]
     pub fn write_buffer(&self, buffer: &super::WBuffer, offset: u32, data: &[u8]) {
+        use super::types::buffer_usage;
+
+        // Determine the correct GL target based on buffer usage
+        let target = if buffer.usage & buffer_usage::INDEX != 0 {
+            glow::ELEMENT_ARRAY_BUFFER
+        } else if buffer.usage & buffer_usage::UNIFORM != 0 {
+            glow::UNIFORM_BUFFER
+        } else {
+            glow::ARRAY_BUFFER
+        };
+
         let ctx = self.context.borrow();
         unsafe {
-            ctx.gl.bind_buffer(glow::ARRAY_BUFFER, Some(buffer.raw));
+            ctx.gl.bind_buffer(target, Some(buffer.raw));
             ctx.gl.buffer_sub_data_u8_slice(
-                glow::ARRAY_BUFFER,
+                target,
                 offset as i32,
                 data,
             );
-            ctx.gl.bind_buffer(glow::ARRAY_BUFFER, None);
+            ctx.gl.bind_buffer(target, None);
         }
     }
 }
@@ -109,5 +120,26 @@ impl WDevice {
         ctx.width = width;
         ctx.height = height;
         log::debug!("Viewport size updated to {}x{}", width, height);
+    }
+
+    /// Get the current surface texture (default framebuffer)
+    ///
+    /// In WebGL, the "surface texture" is the default framebuffer (the canvas).
+    /// This returns a WTexture with raw=None, which signals to the render pass
+    /// that it should render to the default framebuffer.
+    ///
+    /// This is equivalent to GPUCanvasContext.getCurrentTexture() in WebGPU.
+    #[wasm_bindgen(js_name = getSurfaceTexture)]
+    pub fn get_surface_texture(&self) -> super::texture::WTexture {
+        let ctx = self.context.borrow();
+        super::texture::WTexture {
+            raw: None, // None = default framebuffer
+            width: ctx.width,
+            height: ctx.height,
+            depth_or_array_layers: 1,
+            format: super::texture::WTextureFormat::Rgba8Unorm, // Canvas is typically RGBA8
+            context: self.context.clone(),
+            is_surface_texture: true,
+        }
     }
 }

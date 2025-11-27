@@ -13,7 +13,8 @@ pub use webgl_backend::*;
 // Initialize console logging for debugging
 #[wasm_bindgen(start)]
 pub fn init() {
-    console_log::init_with_level(log::Level::Debug).ok();
+    // console_log::init_with_level(log::Level::Debug).ok();
+    console_log::init_with_level(log::Level::Info).ok();
     log::info!("wgpu-webgl-wasm initialized");
 }
 

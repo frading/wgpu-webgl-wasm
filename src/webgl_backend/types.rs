@@ -25,50 +25,106 @@ impl WPrimitiveTopology {
     }
 }
 
-/// Vertex format types
+/// Vertex format types supported by WebGL2
+/// These map to glVertexAttribPointer/glVertexAttribIPointer parameters
 #[wasm_bindgen]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WVertexFormat {
-    Float32 = 0,
-    Float32x2 = 1,
-    Float32x3 = 2,
-    Float32x4 = 3,
-    Uint32 = 4,
-    Sint32 = 5,
+    // 8-bit formats
+    Uint8x2 = 0,
+    Uint8x4 = 1,
+    Sint8x2 = 2,
+    Sint8x4 = 3,
+    Unorm8x2 = 4,
+    Unorm8x4 = 5,
+    Snorm8x2 = 6,
+    Snorm8x4 = 7,
+    // 16-bit formats
+    Uint16x2 = 8,
+    Uint16x4 = 9,
+    Sint16x2 = 10,
+    Sint16x4 = 11,
+    Unorm16x2 = 12,
+    Unorm16x4 = 13,
+    Snorm16x2 = 14,
+    Snorm16x4 = 15,
+    Float16x2 = 16,
+    Float16x4 = 17,
+    // 32-bit formats
+    Float32 = 18,
+    Float32x2 = 19,
+    Float32x3 = 20,
+    Float32x4 = 21,
+    Uint32 = 22,
+    Uint32x2 = 23,
+    Uint32x3 = 24,
+    Uint32x4 = 25,
+    Sint32 = 26,
+    Sint32x2 = 27,
+    Sint32x3 = 28,
+    Sint32x4 = 29,
 }
 
 impl WVertexFormat {
     pub fn size(self) -> u32 {
         match self {
-            WVertexFormat::Float32 => 4,
-            WVertexFormat::Float32x2 => 8,
-            WVertexFormat::Float32x3 => 12,
-            WVertexFormat::Float32x4 => 16,
-            WVertexFormat::Uint32 => 4,
-            WVertexFormat::Sint32 => 4,
+            WVertexFormat::Uint8x2 | WVertexFormat::Sint8x2 | WVertexFormat::Unorm8x2 | WVertexFormat::Snorm8x2 => 2,
+            WVertexFormat::Uint8x4 | WVertexFormat::Sint8x4 | WVertexFormat::Unorm8x4 | WVertexFormat::Snorm8x4 => 4,
+            WVertexFormat::Uint16x2 | WVertexFormat::Sint16x2 | WVertexFormat::Unorm16x2 | WVertexFormat::Snorm16x2 | WVertexFormat::Float16x2 => 4,
+            WVertexFormat::Uint16x4 | WVertexFormat::Sint16x4 | WVertexFormat::Unorm16x4 | WVertexFormat::Snorm16x4 | WVertexFormat::Float16x4 => 8,
+            WVertexFormat::Float32 | WVertexFormat::Uint32 | WVertexFormat::Sint32 => 4,
+            WVertexFormat::Float32x2 | WVertexFormat::Uint32x2 | WVertexFormat::Sint32x2 => 8,
+            WVertexFormat::Float32x3 | WVertexFormat::Uint32x3 | WVertexFormat::Sint32x3 => 12,
+            WVertexFormat::Float32x4 | WVertexFormat::Uint32x4 | WVertexFormat::Sint32x4 => 16,
         }
     }
 
     pub fn components(self) -> i32 {
         match self {
-            WVertexFormat::Float32 => 1,
-            WVertexFormat::Float32x2 => 2,
-            WVertexFormat::Float32x3 => 3,
-            WVertexFormat::Float32x4 => 4,
-            WVertexFormat::Uint32 => 1,
-            WVertexFormat::Sint32 => 1,
+            WVertexFormat::Float32 | WVertexFormat::Uint32 | WVertexFormat::Sint32 => 1,
+            WVertexFormat::Uint8x2 | WVertexFormat::Sint8x2 | WVertexFormat::Unorm8x2 | WVertexFormat::Snorm8x2 |
+            WVertexFormat::Uint16x2 | WVertexFormat::Sint16x2 | WVertexFormat::Unorm16x2 | WVertexFormat::Snorm16x2 |
+            WVertexFormat::Float16x2 | WVertexFormat::Float32x2 | WVertexFormat::Uint32x2 | WVertexFormat::Sint32x2 => 2,
+            WVertexFormat::Float32x3 | WVertexFormat::Uint32x3 | WVertexFormat::Sint32x3 => 3,
+            WVertexFormat::Uint8x4 | WVertexFormat::Sint8x4 | WVertexFormat::Unorm8x4 | WVertexFormat::Snorm8x4 |
+            WVertexFormat::Uint16x4 | WVertexFormat::Sint16x4 | WVertexFormat::Unorm16x4 | WVertexFormat::Snorm16x4 |
+            WVertexFormat::Float16x4 | WVertexFormat::Float32x4 | WVertexFormat::Uint32x4 | WVertexFormat::Sint32x4 => 4,
         }
     }
 
     pub fn gl_type(self) -> u32 {
         match self {
-            WVertexFormat::Float32
-            | WVertexFormat::Float32x2
-            | WVertexFormat::Float32x3
-            | WVertexFormat::Float32x4 => glow::FLOAT,
-            WVertexFormat::Uint32 => glow::UNSIGNED_INT,
-            WVertexFormat::Sint32 => glow::INT,
+            WVertexFormat::Uint8x2 | WVertexFormat::Uint8x4 | WVertexFormat::Unorm8x2 | WVertexFormat::Unorm8x4 => glow::UNSIGNED_BYTE,
+            WVertexFormat::Sint8x2 | WVertexFormat::Sint8x4 | WVertexFormat::Snorm8x2 | WVertexFormat::Snorm8x4 => glow::BYTE,
+            WVertexFormat::Uint16x2 | WVertexFormat::Uint16x4 | WVertexFormat::Unorm16x2 | WVertexFormat::Unorm16x4 => glow::UNSIGNED_SHORT,
+            WVertexFormat::Sint16x2 | WVertexFormat::Sint16x4 | WVertexFormat::Snorm16x2 | WVertexFormat::Snorm16x4 => glow::SHORT,
+            WVertexFormat::Float16x2 | WVertexFormat::Float16x4 => glow::HALF_FLOAT,
+            WVertexFormat::Float32 | WVertexFormat::Float32x2 | WVertexFormat::Float32x3 | WVertexFormat::Float32x4 => glow::FLOAT,
+            WVertexFormat::Uint32 | WVertexFormat::Uint32x2 | WVertexFormat::Uint32x3 | WVertexFormat::Uint32x4 => glow::UNSIGNED_INT,
+            WVertexFormat::Sint32 | WVertexFormat::Sint32x2 | WVertexFormat::Sint32x3 | WVertexFormat::Sint32x4 => glow::INT,
         }
+    }
+
+    /// Whether this format should be normalized when passed to glVertexAttribPointer
+    pub fn normalized(self) -> bool {
+        matches!(self,
+            WVertexFormat::Unorm8x2 | WVertexFormat::Unorm8x4 |
+            WVertexFormat::Snorm8x2 | WVertexFormat::Snorm8x4 |
+            WVertexFormat::Unorm16x2 | WVertexFormat::Unorm16x4 |
+            WVertexFormat::Snorm16x2 | WVertexFormat::Snorm16x4
+        )
+    }
+
+    /// Whether this format requires glVertexAttribIPointer (integer formats)
+    pub fn is_integer(self) -> bool {
+        matches!(self,
+            WVertexFormat::Uint8x2 | WVertexFormat::Uint8x4 |
+            WVertexFormat::Sint8x2 | WVertexFormat::Sint8x4 |
+            WVertexFormat::Uint16x2 | WVertexFormat::Uint16x4 |
+            WVertexFormat::Sint16x2 | WVertexFormat::Sint16x4 |
+            WVertexFormat::Uint32 | WVertexFormat::Uint32x2 | WVertexFormat::Uint32x3 | WVertexFormat::Uint32x4 |
+            WVertexFormat::Sint32 | WVertexFormat::Sint32x2 | WVertexFormat::Sint32x3 | WVertexFormat::Sint32x4
+        )
     }
 }
 

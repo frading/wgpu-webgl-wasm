@@ -91,6 +91,110 @@ impl WQueue {
             ctx.gl.bind_buffer(target, None);
         }
     }
+
+    /// Write data to a texture
+    ///
+    /// texture: The destination texture
+    /// mip_level: The mip level to write to
+    /// origin_x, origin_y, origin_z: The origin within the texture to write to
+    /// data: The pixel data to write
+    /// bytes_per_row: Bytes per row in the source data (for alignment)
+    /// rows_per_image: Rows per image (for 3D textures / 2D arrays)
+    /// width, height, depth: Size of the region to write
+    #[wasm_bindgen(js_name = writeTexture)]
+    pub fn write_texture(
+        &self,
+        texture: &super::texture::WTexture,
+        mip_level: u32,
+        origin_x: u32,
+        origin_y: u32,
+        origin_z: u32,
+        data: &[u8],
+        bytes_per_row: u32,
+        _rows_per_image: u32,
+        width: u32,
+        height: u32,
+        depth: u32,
+    ) {
+        let Some(tex) = texture.raw else {
+            log::warn!("Cannot write to surface texture");
+            return;
+        };
+
+        let ctx = self.context.borrow();
+        let format = texture.format;
+        let gl_format = format.gl_format();
+        let gl_type = format.gl_type();
+
+        unsafe {
+            // Set unpack alignment based on bytes_per_row
+            // WebGL requires proper alignment for texture uploads
+            let pixel_size = match format {
+                super::texture::WTextureFormat::R8Unorm |
+                super::texture::WTextureFormat::R8Snorm |
+                super::texture::WTextureFormat::R8Uint |
+                super::texture::WTextureFormat::R8Sint => 1,
+                super::texture::WTextureFormat::Rg8Unorm |
+                super::texture::WTextureFormat::Rg8Snorm |
+                super::texture::WTextureFormat::Rg8Uint |
+                super::texture::WTextureFormat::Rg8Sint => 2,
+                _ => 4, // RGBA and depth formats
+            };
+
+            // Calculate expected row size and set row length if there's padding
+            let expected_row_size = width * pixel_size;
+            if bytes_per_row > expected_row_size {
+                ctx.gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, (bytes_per_row / pixel_size) as i32);
+            }
+
+            // Determine if this is a 2D or 2D array texture
+            let is_array = texture.depth_or_array_layers > 1;
+
+            if is_array || depth > 1 {
+                // 2D array texture or 3D texture
+                ctx.gl.bind_texture(glow::TEXTURE_2D_ARRAY, Some(tex));
+                ctx.gl.tex_sub_image_3d(
+                    glow::TEXTURE_2D_ARRAY,
+                    mip_level as i32,
+                    origin_x as i32,
+                    origin_y as i32,
+                    origin_z as i32,
+                    width as i32,
+                    height as i32,
+                    depth as i32,
+                    gl_format,
+                    gl_type,
+                    glow::PixelUnpackData::Slice(Some(data)),
+                );
+                ctx.gl.bind_texture(glow::TEXTURE_2D_ARRAY, None);
+            } else {
+                // Regular 2D texture
+                ctx.gl.bind_texture(glow::TEXTURE_2D, Some(tex));
+                ctx.gl.tex_sub_image_2d(
+                    glow::TEXTURE_2D,
+                    mip_level as i32,
+                    origin_x as i32,
+                    origin_y as i32,
+                    width as i32,
+                    height as i32,
+                    gl_format,
+                    gl_type,
+                    glow::PixelUnpackData::Slice(Some(data)),
+                );
+                ctx.gl.bind_texture(glow::TEXTURE_2D, None);
+            }
+
+            // Reset row length
+            if bytes_per_row > expected_row_size {
+                ctx.gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, 0);
+            }
+        }
+
+        log::debug!(
+            "Wrote {}x{}x{} pixels to texture at ({}, {}, {}), mip {}",
+            width, height, depth, origin_x, origin_y, origin_z, mip_level
+        );
+    }
 }
 
 /// Create a device and queue from a canvas element

@@ -621,3 +621,128 @@ pub fn create_bind_group_with_texture_view_sampler(
         context: device.context(),
     }
 }
+
+/// Create a bind group with 2 buffers + 1 texture view + 1 sampler
+/// Common case for materials with uniform buffers and a sampled texture
+#[wasm_bindgen(js_name = createBindGroupWith2BuffersTextureViewSampler)]
+pub fn create_bind_group_with_2_buffers_texture_view_sampler(
+    device: &super::WDevice,
+    layout: &WBindGroupLayout,
+    buffer0_binding: u32,
+    buffer0: &WBuffer,
+    buffer0_offset: u64,
+    buffer0_size: u64,
+    buffer1_binding: u32,
+    buffer1: &WBuffer,
+    buffer1_offset: u64,
+    buffer1_size: u64,
+    texture_binding: u32,
+    texture_view: &WTextureView,
+    sampler_binding: u32,
+    sampler: &WSampler,
+) -> WBindGroup {
+    let mut entries = Vec::new();
+
+    // Add buffer entries
+    entries.push(BindGroupEntry {
+        binding: buffer0_binding,
+        resource: BoundResource::Buffer {
+            buffer: buffer0.raw,
+            offset: buffer0_offset,
+            size: buffer0_size,
+        },
+    });
+
+    entries.push(BindGroupEntry {
+        binding: buffer1_binding,
+        resource: BoundResource::Buffer {
+            buffer: buffer1.raw,
+            offset: buffer1_offset,
+            size: buffer1_size,
+        },
+    });
+
+    // Add texture entry from view
+    if let Some(tex) = texture_view.raw() {
+        entries.push(BindGroupEntry {
+            binding: texture_binding,
+            resource: BoundResource::Texture {
+                texture: tex,
+                target: glow::TEXTURE_2D,
+            },
+        });
+    }
+
+    // Add sampler entry
+    entries.push(BindGroupEntry {
+        binding: sampler_binding,
+        resource: BoundResource::Sampler {
+            sampler: sampler.raw,
+        },
+    });
+
+    log::debug!("Created bind group with 2 buffers at {}/{}, texture view at {}, sampler at {}",
+        buffer0_binding, buffer1_binding, texture_binding, sampler_binding);
+
+    WBindGroup {
+        layout: layout.entries.clone(),
+        entries,
+        context: device.context(),
+    }
+}
+
+/// Create a bind group with 1 buffer + 1 texture view + 1 sampler
+/// Common case for materials with a uniform buffer and a sampled texture
+#[wasm_bindgen(js_name = createBindGroupWithBufferTextureViewSampler)]
+pub fn create_bind_group_with_buffer_texture_view_sampler(
+    device: &super::WDevice,
+    layout: &WBindGroupLayout,
+    buffer_binding: u32,
+    buffer: &WBuffer,
+    buffer_offset: u64,
+    buffer_size: u64,
+    texture_binding: u32,
+    texture_view: &WTextureView,
+    sampler_binding: u32,
+    sampler: &WSampler,
+) -> WBindGroup {
+    let mut entries = Vec::new();
+
+    // Add buffer entry
+    entries.push(BindGroupEntry {
+        binding: buffer_binding,
+        resource: BoundResource::Buffer {
+            buffer: buffer.raw,
+            offset: buffer_offset,
+            size: buffer_size,
+        },
+    });
+
+    // Add texture entry from view
+    if let Some(tex) = texture_view.raw() {
+        entries.push(BindGroupEntry {
+            binding: texture_binding,
+            resource: BoundResource::Texture {
+                texture: tex,
+                target: glow::TEXTURE_2D,
+            },
+        });
+    }
+
+    // Add sampler entry
+    entries.push(BindGroupEntry {
+        binding: sampler_binding,
+        resource: BoundResource::Sampler {
+            sampler: sampler.raw,
+        },
+    });
+
+    log::debug!("Created bind group with buffer at {}, texture view at {}, sampler at {}",
+        buffer_binding, texture_binding, sampler_binding);
+
+    WBindGroup {
+        layout: layout.entries.clone(),
+        entries,
+        context: device.context(),
+    }
+}

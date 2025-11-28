@@ -95,9 +95,13 @@ pub fn transpile_wgsl_to_glsl(
     // - WebGPU and OpenGL both have Y+ pointing up in clip space
     // - The Y-flip was intended for wgpu-hal's internal framebuffer handling
     // - We handle the FBO Y-flip at the texture sampling level instead
-    if stage == naga::ShaderStage::Vertex {
-        output = undo_y_flip(&output);
-    }
+    //
+    // Update: with undo_y_flip, applying a post process pass such as bloom
+    // led to the bloom being inverted. So we currently remove this. 
+    //
+    // if stage == naga::ShaderStage::Vertex {
+    //     output = undo_y_flip(&output);
+    // }
 
     Ok(output)
 }

@@ -799,3 +799,80 @@ pub fn create_bind_group_with_buffer_texture_view_sampler(
         context: device.context(),
     }
 }
+
+/// Create a bind group with 1 buffer + 1 sampler + 6 texture views
+/// Common case for post-processing effects like bloom that sample multiple textures
+#[wasm_bindgen(js_name = createBindGroupWithBufferSampler6TextureViews)]
+pub fn create_bind_group_with_buffer_sampler_6_texture_views(
+    device: &super::WDevice,
+    layout: &WBindGroupLayout,
+    buffer_binding: u32,
+    buffer: &WBuffer,
+    buffer_offset: u64,
+    buffer_size: u64,
+    sampler_binding: u32,
+    sampler: &WSampler,
+    tex0_binding: u32,
+    tex0: &WTextureView,
+    tex1_binding: u32,
+    tex1: &WTextureView,
+    tex2_binding: u32,
+    tex2: &WTextureView,
+    tex3_binding: u32,
+    tex3: &WTextureView,
+    tex4_binding: u32,
+    tex4: &WTextureView,
+    tex5_binding: u32,
+    tex5: &WTextureView,
+) -> WBindGroup {
+    let mut entries = Vec::new();
+
+    // Add buffer entry
+    entries.push(BindGroupEntry {
+        binding: buffer_binding,
+        resource: BoundResource::Buffer {
+            buffer: buffer.raw,
+            offset: buffer_offset,
+            size: buffer_size,
+        },
+    });
+
+    // Helper to add texture and sampler for a texture unit
+    let texture_views = [
+        (tex0_binding, tex0),
+        (tex1_binding, tex1),
+        (tex2_binding, tex2),
+        (tex3_binding, tex3),
+        (tex4_binding, tex4),
+        (tex5_binding, tex5),
+    ];
+
+    for (tex_binding, texture_view) in texture_views {
+        if let Some(tex) = texture_view.raw() {
+            entries.push(BindGroupEntry {
+                binding: tex_binding,
+                resource: BoundResource::Texture {
+                    texture: tex,
+                    target: get_texture_view_target(texture_view),
+                },
+            });
+        }
+
+        // Add sampler entry for this texture unit
+        entries.push(BindGroupEntry {
+            binding: tex_binding,
+            resource: BoundResource::Sampler {
+                sampler: sampler.raw,
+            },
+        });
+    }
+
+    log::info!("Created bind group with buffer at {}, sampler at {}, and 6 texture views",
+        buffer_binding, sampler_binding);
+
+    WBindGroup {
+        layout: layout.entries.clone(),
+        entries,
+        context: device.context(),
+    }
+}

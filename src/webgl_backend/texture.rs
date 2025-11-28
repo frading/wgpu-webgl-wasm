@@ -102,14 +102,21 @@ impl WTexture {
     /// Create a texture view from this texture
     #[wasm_bindgen(js_name = createView)]
     pub fn create_view(&self) -> WTextureView {
+        // Determine the correct view dimension based on the texture's array layers
+        let dimension = if self.depth_or_array_layers > 1 {
+            WTextureViewDimension::D2Array
+        } else {
+            WTextureViewDimension::D2
+        };
+
         WTextureView {
             texture_raw: self.raw,
             format: self.format,
-            dimension: WTextureViewDimension::D2,
+            dimension,
             base_mip_level: 0,
             mip_level_count: 1,
             base_array_layer: 0,
-            array_layer_count: 1,
+            array_layer_count: self.depth_or_array_layers,
             context: self.context.clone(),
             is_surface_texture: self.is_surface_texture,
             width: self.width,

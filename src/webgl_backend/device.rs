@@ -127,8 +127,11 @@ impl WQueue {
         let gl_type = format.gl_type();
 
         unsafe {
-            // Set unpack alignment based on bytes_per_row
-            // WebGL requires proper alignment for texture uploads
+            // Set unpack alignment to 1 for maximum compatibility
+            // Firefox is stricter about alignment than Chrome
+            ctx.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 1);
+
+            // Calculate pixel size for row length calculation
             let pixel_size = match format {
                 super::texture::WTextureFormat::R8Unorm |
                 super::texture::WTextureFormat::R8Snorm |
@@ -184,15 +187,25 @@ impl WQueue {
                 ctx.gl.bind_texture(glow::TEXTURE_2D, None);
             }
 
-            // Reset row length
+            // Reset pixel store state
             if bytes_per_row > expected_row_size {
                 ctx.gl.pixel_store_i32(glow::UNPACK_ROW_LENGTH, 0);
             }
+            ctx.gl.pixel_store_i32(glow::UNPACK_ALIGNMENT, 4); // Reset to default
+
+            // Check for GL errors after texture upload
+            let error = ctx.gl.get_error();
+            if error != glow::NO_ERROR {
+                log::error!(
+                    "WebGL error {} after writing texture {}x{}x{} at ({}, {}, {}), format {:?}",
+                    error, width, height, depth, origin_x, origin_y, origin_z, format
+                );
+            }
         }
 
-        log::debug!(
-            "Wrote {}x{}x{} pixels to texture at ({}, {}, {}), mip {}",
-            width, height, depth, origin_x, origin_y, origin_z, mip_level
+        log::info!(
+            "Wrote {}x{}x{} pixels to texture at ({}, {}, {}), mip {}, format {:?}, data_len={}",
+            width, height, depth, origin_x, origin_y, origin_z, mip_level, format, data.len()
         );
     }
 }

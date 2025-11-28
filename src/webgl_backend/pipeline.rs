@@ -75,6 +75,22 @@ impl WRenderPipeline {
     }
 }
 
+/// Log all active uniforms in a program (for debugging sampler naming issues)
+unsafe fn log_active_uniforms(gl: &glow::Context, program: glow::Program) {
+    let num_uniforms = gl.get_program_parameter_i32(program, glow::ACTIVE_UNIFORMS) as u32;
+    log::info!("Program has {} active uniforms:", num_uniforms);
+
+    for i in 0..num_uniforms {
+        if let Some(uniform) = gl.get_active_uniform(program, i) {
+            let location = gl.get_uniform_location(program, &uniform.name);
+            log::info!(
+                "  Uniform {}: name='{}', type={:#x}, size={}, location={:?}",
+                i, uniform.name, uniform.utype, uniform.size, location.is_some()
+            );
+        }
+    }
+}
+
 /// Setup uniform block bindings for a linked program.
 /// Naga generates uniform block names like `CameraUniforms_block_0Vertex` with
 /// variables inside named `_group_1_binding_0_vs`.
@@ -268,6 +284,9 @@ pub fn create_render_pipeline(
 
         // Setup uniform block bindings after linking
         setup_uniform_block_bindings(&ctx.gl, program);
+
+        // Log all active uniforms for debugging (especially sampler names)
+        log_active_uniforms(&ctx.gl, program);
 
         // Create VAO (required for WebGL2)
         let vao = ctx
@@ -525,6 +544,9 @@ pub fn create_render_pipeline_from_descriptor(
         // Setup uniform block bindings after linking
         setup_uniform_block_bindings(&ctx.gl, program);
 
+        // Log all active uniforms for debugging (especially sampler names)
+        log_active_uniforms(&ctx.gl, program);
+
         // Create VAO
         let vao = ctx
             .gl
@@ -597,6 +619,9 @@ pub fn create_render_pipeline_with_layout(
 
         // Setup uniform block bindings after linking
         setup_uniform_block_bindings(&ctx.gl, program);
+
+        // Log all active uniforms for debugging (especially sampler names)
+        log_active_uniforms(&ctx.gl, program);
 
         // Create VAO (required for WebGL2)
         let vao = ctx

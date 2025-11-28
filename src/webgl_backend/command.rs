@@ -9,6 +9,23 @@ use super::types::WLoadOp;
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
 
+/// Check for WebGL errors and log them
+#[allow(dead_code)]
+unsafe fn check_gl_error(gl: &glow::Context, context: &str) {
+    let error = gl.get_error();
+    if error != glow::NO_ERROR {
+        let error_str = match error {
+            glow::INVALID_ENUM => "INVALID_ENUM",
+            glow::INVALID_VALUE => "INVALID_VALUE",
+            glow::INVALID_OPERATION => "INVALID_OPERATION",
+            glow::INVALID_FRAMEBUFFER_OPERATION => "INVALID_FRAMEBUFFER_OPERATION",
+            glow::OUT_OF_MEMORY => "OUT_OF_MEMORY",
+            _ => "UNKNOWN",
+        };
+        log::error!("WebGL error {} ({}) at: {}", error, error_str, context);
+    }
+}
+
 /// Index format for draw_indexed
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IndexFormat {
@@ -155,6 +172,9 @@ impl WRenderPassEncoder {
     ) {
         let ctx = self.context.borrow();
         unsafe {
+            // Check for errors before draw
+            check_gl_error(&ctx.gl, "before draw_indexed");
+
             let index_type = self.current_index_format.to_gl();
             let byte_offset = (first_index * self.current_index_format.byte_size()) as i32;
 
@@ -174,6 +194,9 @@ impl WRenderPassEncoder {
                     byte_offset,
                 );
             }
+
+            // Check for errors after draw
+            check_gl_error(&ctx.gl, &format!("after draw_indexed({} indices)", index_count));
         }
     }
 

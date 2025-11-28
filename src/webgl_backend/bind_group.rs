@@ -7,9 +7,30 @@
 use super::buffer::WBuffer;
 use super::device::GlContextRef;
 use super::sampler::WSampler;
-use super::texture::{WTexture, WTextureView};
+use super::texture::{WTexture, WTextureView, WTextureViewDimension};
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
+
+/// Helper function to determine GL texture target from texture's depth_or_array_layers
+fn get_texture_target(texture: &WTexture) -> u32 {
+    if texture.depth_or_array_layers > 1 {
+        glow::TEXTURE_2D_ARRAY
+    } else {
+        glow::TEXTURE_2D
+    }
+}
+
+/// Helper function to determine GL texture target from texture view's dimension
+fn get_texture_view_target(view: &WTextureView) -> u32 {
+    match view.dimension {
+        WTextureViewDimension::D1 => glow::TEXTURE_2D, // WebGL2 doesn't have 1D textures
+        WTextureViewDimension::D2 => glow::TEXTURE_2D,
+        WTextureViewDimension::D2Array => glow::TEXTURE_2D_ARRAY,
+        WTextureViewDimension::Cube => glow::TEXTURE_CUBE_MAP,
+        WTextureViewDimension::CubeArray => glow::TEXTURE_CUBE_MAP, // WebGL2 doesn't have cube arrays
+        WTextureViewDimension::D3 => glow::TEXTURE_3D,
+    }
+}
 
 /// Binding type enum
 #[wasm_bindgen]
@@ -174,15 +195,35 @@ impl WBindGroup {
                 }
                 BoundResource::Sampler { sampler } => {
                     unsafe {
+                        // Make sure the texture unit is active before binding sampler
+                        gl.active_texture(glow::TEXTURE0 + entry.binding);
                         gl.bind_sampler(entry.binding, Some(*sampler));
+
+                        // Check for GL errors
+                        let error = gl.get_error();
+                        if error != glow::NO_ERROR {
+                            log::error!(
+                                "WebGL error {} after binding sampler {:?} to texture unit {}",
+                                error, sampler, entry.binding
+                            );
+                        }
                     }
-                    log::debug!("Bound sampler to texture unit {}", entry.binding);
+                    log::info!("Bound sampler {:?} to texture unit {}", sampler, entry.binding);
                 }
                 BoundResource::Texture { texture, target } => {
                     let texture_unit = entry.binding;
                     unsafe {
                         gl.active_texture(glow::TEXTURE0 + texture_unit);
                         gl.bind_texture(*target, Some(*texture));
+
+                        // Check for GL errors after texture binding
+                        let error = gl.get_error();
+                        if error != glow::NO_ERROR {
+                            log::error!(
+                                "WebGL error {} after binding texture {:?} to unit {} with target {:#x}",
+                                error, texture, texture_unit, target
+                            );
+                        }
 
                         // Set sampler uniform if we have a program
                         if let Some(prog) = program {
@@ -193,16 +234,25 @@ impl WBindGroup {
                                 format!("_group_{}_binding_{}_vs", group_index, entry.binding),
                             ];
 
+                            let mut found = false;
                             for name in &sampler_names {
                                 if let Some(location) = gl.get_uniform_location(prog, name) {
                                     gl.uniform_1_i32(Some(&location), texture_unit as i32);
                                     log::info!("Set sampler uniform '{}' to texture unit {}", name, texture_unit);
+                                    found = true;
                                     break;
                                 }
                             }
+                            if !found {
+                                // This is actually OK for depth textures or textures used in other ways
+                                log::debug!(
+                                    "No sampler uniform for group={}, binding={}. Tried: {:?}",
+                                    group_index, entry.binding, sampler_names
+                                );
+                            }
                         }
                     }
-                    log::info!("Bound texture {:?} to texture unit {}", texture, texture_unit);
+                    log::info!("Bound texture {:?} to texture unit {} (target={:#x})", texture, texture_unit, target);
                 }
                 BoundResource::TextureSampler { texture, sampler, target } => {
                     unsafe {
@@ -478,7 +528,7 @@ pub fn create_bind_group_with_texture(
             binding,
             resource: BoundResource::Texture {
                 texture: tex,
-                target: glow::TEXTURE_2D,
+                target: get_texture_target(texture),
             },
         }]
     } else {
@@ -513,7 +563,7 @@ pub fn create_bind_group_with_texture_sampler(
             binding: texture_binding,
             resource: BoundResource::Texture {
                 texture: tex,
-                target: glow::TEXTURE_2D,
+                target: get_texture_target(texture),
             },
         });
     }
@@ -564,7 +614,7 @@ pub fn create_bind_group_with_texture_view(
             binding,
             resource: BoundResource::Texture {
                 texture: tex,
-                target: glow::TEXTURE_2D,
+                target: get_texture_view_target(texture_view),
             },
         }]
     } else {
@@ -594,26 +644,29 @@ pub fn create_bind_group_with_texture_view_sampler(
     let mut entries = Vec::new();
 
     // Add texture entry from view
+    // The texture binding determines the texture unit
     if let Some(tex) = texture_view.raw() {
         entries.push(BindGroupEntry {
             binding: texture_binding,
             resource: BoundResource::Texture {
                 texture: tex,
-                target: glow::TEXTURE_2D,
+                target: get_texture_view_target(texture_view),
             },
         });
     }
 
     // Add sampler entry
+    // IMPORTANT: The sampler must be bound to the SAME texture unit as the texture,
+    // not its own binding number. In WebGL, sampler objects are bound to texture units.
     entries.push(BindGroupEntry {
-        binding: sampler_binding,
+        binding: texture_binding, // Use texture_binding, not sampler_binding!
         resource: BoundResource::Sampler {
             sampler: sampler.raw,
         },
     });
 
-    log::debug!("Created bind group with texture view at {} and sampler at {}",
-        texture_binding, sampler_binding);
+    log::info!("Created bind group with texture (binding {}) and sampler (binding {}) -> both use texture unit {}",
+        texture_binding, sampler_binding, texture_binding);
 
     WBindGroup {
         layout: layout.entries.clone(),
@@ -668,21 +721,21 @@ pub fn create_bind_group_with_2_buffers_texture_view_sampler(
             binding: texture_binding,
             resource: BoundResource::Texture {
                 texture: tex,
-                target: glow::TEXTURE_2D,
+                target: get_texture_view_target(texture_view),
             },
         });
     }
 
-    // Add sampler entry
+    // Add sampler entry - bind to same texture unit as the texture
     entries.push(BindGroupEntry {
-        binding: sampler_binding,
+        binding: texture_binding, // Use texture_binding, not sampler_binding!
         resource: BoundResource::Sampler {
             sampler: sampler.raw,
         },
     });
 
-    log::debug!("Created bind group with 2 buffers at {}/{}, texture view at {}, sampler at {}",
-        buffer0_binding, buffer1_binding, texture_binding, sampler_binding);
+    log::info!("Created bind group with 2 buffers at {}/{}, texture (binding {}) + sampler (binding {}) -> unit {}",
+        buffer0_binding, buffer1_binding, texture_binding, sampler_binding, texture_binding);
 
     WBindGroup {
         layout: layout.entries.clone(),
@@ -724,21 +777,21 @@ pub fn create_bind_group_with_buffer_texture_view_sampler(
             binding: texture_binding,
             resource: BoundResource::Texture {
                 texture: tex,
-                target: glow::TEXTURE_2D,
+                target: get_texture_view_target(texture_view),
             },
         });
     }
 
-    // Add sampler entry
+    // Add sampler entry - bind to same texture unit as the texture
     entries.push(BindGroupEntry {
-        binding: sampler_binding,
+        binding: texture_binding, // Use texture_binding, not sampler_binding!
         resource: BoundResource::Sampler {
             sampler: sampler.raw,
         },
     });
 
-    log::debug!("Created bind group with buffer at {}, texture view at {}, sampler at {}",
-        buffer_binding, texture_binding, sampler_binding);
+    log::info!("Created bind group with buffer at {}, texture (binding {}) + sampler (binding {}) -> unit {}",
+        buffer_binding, texture_binding, sampler_binding, texture_binding);
 
     WBindGroup {
         layout: layout.entries.clone(),

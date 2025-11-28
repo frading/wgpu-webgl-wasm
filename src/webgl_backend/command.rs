@@ -3,7 +3,7 @@
 use super::bind_group::WBindGroup;
 use super::buffer::WBuffer;
 use super::device::GlContextRef;
-use super::pipeline::{WRenderPipeline, StoredVertexBufferLayout};
+use super::pipeline::{WRenderPipeline, StoredVertexBufferLayout, WVertexStepMode};
 use super::texture::WTextureView;
 use super::types::WLoadOp;
 use glow::HasContext;
@@ -235,6 +235,14 @@ impl WRenderPassEncoder {
             // In WebGL, glVertexAttribPointer captures the currently bound GL_ARRAY_BUFFER
             // Look up the layout for this specific slot
             if let Some(layout) = self.current_vertex_layouts.get(slot as usize) {
+                // Determine divisor based on step mode
+                // 0 = per-vertex (advance every vertex)
+                // 1 = per-instance (advance every instance)
+                let divisor = match layout.step_mode {
+                    WVertexStepMode::Vertex => 0,
+                    WVertexStepMode::Instance => 1,
+                };
+
                 for attr in &layout.attributes {
                     ctx.gl.enable_vertex_attrib_array(attr.location);
                     ctx.gl.vertex_attrib_pointer_f32(
@@ -245,9 +253,11 @@ impl WRenderPassEncoder {
                         layout.stride as i32,
                         (attr.offset + offset) as i32,
                     );
+                    // Set the divisor for instancing
+                    ctx.gl.vertex_attrib_divisor(attr.location, divisor);
                     log::debug!(
-                        "Configured vertex attribute {} for slot {}: offset={}, components={}, stride={}",
-                        attr.location, slot, attr.offset + offset, attr.format.components(), layout.stride
+                        "Configured vertex attribute {} for slot {}: offset={}, components={}, stride={}, divisor={}",
+                        attr.location, slot, attr.offset + offset, attr.format.components(), layout.stride, divisor
                     );
                 }
             } else {

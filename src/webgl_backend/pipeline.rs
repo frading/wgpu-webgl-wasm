@@ -6,6 +6,16 @@ use super::types::{WPrimitiveTopology, WVertexFormat, WBlendState, WBlendFactor,
 use glow::HasContext;
 use wasm_bindgen::prelude::*;
 
+/// Vertex step mode - per-vertex or per-instance
+#[wasm_bindgen]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WVertexStepMode {
+    /// Attribute advances per vertex (default)
+    Vertex = 0,
+    /// Attribute advances per instance
+    Instance = 1,
+}
+
 /// Stored vertex attribute for later configuration
 #[derive(Clone)]
 pub struct StoredVertexAttribute {
@@ -18,6 +28,7 @@ pub struct StoredVertexAttribute {
 #[derive(Clone)]
 pub struct StoredVertexBufferLayout {
     pub stride: u32,
+    pub step_mode: WVertexStepMode,
     pub attributes: Vec<StoredVertexAttribute>,
 }
 
@@ -485,10 +496,11 @@ impl WRenderPipelineDescriptor {
     }
 
     #[wasm_bindgen(js_name = addVertexBufferLayout)]
-    pub fn add_vertex_buffer_layout(&mut self, stride: u32) -> usize {
+    pub fn add_vertex_buffer_layout(&mut self, stride: u32, step_mode: WVertexStepMode) -> usize {
         let index = self.vertex_layouts.len();
         self.vertex_layouts.push(StoredVertexBufferLayout {
             stride,
+            step_mode,
             attributes: Vec::new(),
         });
         index
@@ -634,6 +646,7 @@ pub fn create_render_pipeline_with_layout(
         // so we can't configure attributes until the buffer is bound.
         let stored_layout = StoredVertexBufferLayout {
             stride: vertex_layout.stride,
+            step_mode: WVertexStepMode::Vertex, // Default to per-vertex
             attributes: vertex_layout.attributes.iter().map(|attr| {
                 StoredVertexAttribute {
                     location: attr.location,

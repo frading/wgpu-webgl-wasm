@@ -83,8 +83,10 @@ impl WDevice {
 }
 
 /// Create a device from a canvas element
+/// If requested_format is provided and supported, it will be used; otherwise falls back to a supported format
+/// If prefer_linear is true, prefers non-sRGB formats when falling back
 #[wasm_bindgen(js_name = createDevice)]
-pub async fn create_device(canvas: web_sys::HtmlCanvasElement) -> Result<WDevice, JsValue> {
+pub async fn create_device(canvas: web_sys::HtmlCanvasElement, requested_format: Option<WTextureFormat>, prefer_linear: Option<bool>) -> Result<WDevice, JsValue> {
     let width = canvas.width();
     let height = canvas.height();
 
@@ -128,12 +130,50 @@ pub async fn create_device(canvas: web_sys::HtmlCanvasElement) -> Result<WDevice
 
     // Configure surface
     let surface_caps = surface.get_capabilities(&adapter);
-    let surface_format = surface_caps
-        .formats
-        .iter()
-        .find(|f| f.is_srgb())
-        .copied()
-        .unwrap_or(surface_caps.formats[0]);
+    let prefer_linear = prefer_linear.unwrap_or(false);
+
+    // Log available formats
+    log::info!("Available surface formats: {:?}", surface_caps.formats);
+
+    // Helper to select fallback format based on preference
+    let select_fallback = |formats: &[wgpu::TextureFormat], prefer_linear: bool| -> wgpu::TextureFormat {
+        if prefer_linear {
+            // Prefer non-sRGB (linear) format
+            formats
+                .iter()
+                .find(|f| !f.is_srgb())
+                .copied()
+                .unwrap_or(formats[0])
+        } else {
+            // Prefer sRGB format
+            formats
+                .iter()
+                .find(|f| f.is_srgb())
+                .copied()
+                .unwrap_or(formats[0])
+        }
+    };
+
+    // If a format was requested, check if it's supported
+    let surface_format = if let Some(req_format) = requested_format {
+        let wgpu_format = req_format.to_wgpu();
+        if surface_caps.formats.contains(&wgpu_format) {
+            log::info!("Using requested format {:?}", wgpu_format);
+            wgpu_format
+        } else {
+            let fallback = select_fallback(&surface_caps.formats, prefer_linear);
+            log::warn!(
+                "Requested format {:?} not supported. Available formats: {:?}. Falling back to {:?}",
+                wgpu_format,
+                surface_caps.formats,
+                fallback
+            );
+            fallback
+        }
+    } else {
+        // No format requested, use preference
+        select_fallback(&surface_caps.formats, prefer_linear)
+    };
 
     let surface_config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,

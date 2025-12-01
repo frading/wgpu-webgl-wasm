@@ -75,12 +75,15 @@ wgpu-webgl-wasm/
 ├── vite.config.ts          # Vite configuration
 ├── src/
 │   ├── lib.rs              # Rust entry point
-│   ├── webgl_backend/      # Rust WebGL2 backend
+│   ├── wgpu_backend/       # Rust wgpu-based WebGL2 backend
 │   │   ├── mod.rs
 │   │   ├── device.rs       # WDevice, WQueue
-│   │   ├── shader.rs       # WShaderModule, WGSL→GLSL
-│   │   ├── pipeline.rs     # WRenderPipeline
+│   │   ├── shader.rs       # WShaderModule
+│   │   ├── pipeline.rs     # WRenderPipeline, WRenderPipelineDescriptor
 │   │   ├── buffer.rs       # WBuffer
+│   │   ├── texture.rs      # WTexture, WTextureView
+│   │   ├── sampler.rs      # WSampler
+│   │   ├── bind_group.rs   # WBindGroup, WBindGroupLayout, WPipelineLayout
 │   │   ├── command.rs      # WCommandEncoder, WRenderPassEncoder
 │   │   └── types.rs        # Enums and constants
 │   └── ts/                 # TypeScript source

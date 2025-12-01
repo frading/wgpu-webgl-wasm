@@ -1,6 +1,7 @@
 //! Render pipeline wrapper
 
 use wasm_bindgen::prelude::*;
+use std::sync::atomic::Ordering;
 use super::device::WDevice;
 use super::shader::WShaderModule;
 use super::bind_group::{WBindGroupLayout, WPipelineLayout};
@@ -10,6 +11,7 @@ use super::types::{
 };
 use super::texture::WTextureFormat;
 use super::sampler::WCompareFunction;
+use super::stats::{RENDER_PIPELINE_COUNT, RENDER_PIPELINE_DESCRIPTOR_COUNT, track_string_alloc, track_string_dealloc};
 
 /// Render pipeline
 #[wasm_bindgen]
@@ -20,6 +22,12 @@ pub struct WRenderPipeline {
 impl WRenderPipeline {
     pub(crate) fn inner(&self) -> &wgpu::RenderPipeline {
         &self.inner
+    }
+}
+
+impl Drop for WRenderPipeline {
+    fn drop(&mut self) {
+        RENDER_PIPELINE_COUNT.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -67,10 +75,20 @@ struct VertexBufferLayoutData {
     attributes: Vec<wgpu::VertexAttribute>,
 }
 
+impl Drop for WRenderPipelineDescriptor {
+    fn drop(&mut self) {
+        RENDER_PIPELINE_DESCRIPTOR_COUNT.fetch_sub(1, Ordering::Relaxed);
+        track_string_dealloc(self.vertex_entry_point.len() + self.fragment_entry_point.len());
+    }
+}
+
 #[wasm_bindgen]
 impl WRenderPipelineDescriptor {
     #[wasm_bindgen(constructor)]
     pub fn new(topology: WPrimitiveTopology, vertex_entry_point: &str, fragment_entry_point: &str) -> Self {
+        RENDER_PIPELINE_DESCRIPTOR_COUNT.fetch_add(1, Ordering::Relaxed);
+        track_string_alloc(vertex_entry_point);
+        track_string_alloc(fragment_entry_point);
         Self {
             topology,
             cull_mode: WCullMode::None,
@@ -285,6 +303,8 @@ pub fn create_render_pipeline_with_pipeline_layout(
         });
 
     log::debug!("Created render pipeline with explicit pipeline layout");
+
+    RENDER_PIPELINE_COUNT.fetch_add(1, Ordering::Relaxed);
 
     Ok(WRenderPipeline { inner: pipeline })
 }

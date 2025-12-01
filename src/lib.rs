@@ -57,3 +57,19 @@ pub fn get_backend_limitations() -> JsValue {
 
     limitations.into()
 }
+
+/// Returns WASM memory usage statistics
+#[wasm_bindgen(js_name = getMemoryStats)]
+pub fn get_memory_stats() -> JsValue {
+    let stats = js_sys::Object::new();
+
+    // Get WASM memory size
+    let memory = wasm_bindgen::memory();
+    let buffer = memory.dyn_ref::<js_sys::WebAssembly::Memory>().unwrap().buffer();
+    let wasm_memory_bytes = buffer.dyn_ref::<js_sys::ArrayBuffer>().unwrap().byte_length();
+
+    let _ = js_sys::Reflect::set(&stats, &"wasmMemoryBytes".into(), &wasm_memory_bytes.into());
+    let _ = js_sys::Reflect::set(&stats, &"wasmMemoryMB".into(), &((wasm_memory_bytes as f64) / (1024.0 * 1024.0)).into());
+
+    stats.into()
+}

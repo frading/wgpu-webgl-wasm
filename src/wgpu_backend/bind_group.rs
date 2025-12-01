@@ -5,6 +5,7 @@ use super::device::WDevice;
 use super::buffer::WBuffer;
 use super::texture::WTextureView;
 use super::sampler::WSampler;
+use super::stats::{BIND_GROUP_COUNT, BIND_GROUP_LAYOUT_COUNT, PIPELINE_LAYOUT_COUNT};
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
@@ -139,7 +140,7 @@ impl WBindGroupBuilder {
 
         log::debug!("Created bind group with {} entries", self.entries.len());
 
-        WBindGroup { inner: bind_group }
+        WBindGroup::new(bind_group)
     }
 }
 
@@ -148,6 +149,19 @@ impl WBindGroupBuilder {
 pub struct WBindGroupLayout {
     pub(crate) inner: wgpu::BindGroupLayout,
     pub(crate) entry_count: u32,
+}
+
+impl WBindGroupLayout {
+    pub(crate) fn new(inner: wgpu::BindGroupLayout, entry_count: u32) -> Self {
+        BIND_GROUP_LAYOUT_COUNT.fetch_add(1, Ordering::Relaxed);
+        Self { inner, entry_count }
+    }
+}
+
+impl Drop for WBindGroupLayout {
+    fn drop(&mut self) {
+        BIND_GROUP_LAYOUT_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[wasm_bindgen]
@@ -169,6 +183,17 @@ impl WPipelineLayout {
     pub(crate) fn inner(&self) -> &wgpu::PipelineLayout {
         &self.inner
     }
+
+    pub(crate) fn new(inner: wgpu::PipelineLayout, bind_group_layout_count: u32) -> Self {
+        PIPELINE_LAYOUT_COUNT.fetch_add(1, Ordering::Relaxed);
+        Self { inner, bind_group_layout_count }
+    }
+}
+
+impl Drop for WPipelineLayout {
+    fn drop(&mut self) {
+        PIPELINE_LAYOUT_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[wasm_bindgen]
@@ -188,6 +213,17 @@ pub struct WBindGroup {
 impl WBindGroup {
     pub(crate) fn inner(&self) -> &wgpu::BindGroup {
         &self.inner
+    }
+
+    pub(crate) fn new(inner: wgpu::BindGroup) -> Self {
+        BIND_GROUP_COUNT.fetch_add(1, Ordering::Relaxed);
+        Self { inner }
+    }
+}
+
+impl Drop for WBindGroup {
+    fn drop(&mut self) {
+        BIND_GROUP_COUNT.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -322,7 +358,7 @@ pub fn create_bind_group_layout(
 
     log::debug!("Created bind group layout with {} entries", entry_count);
 
-    Ok(WBindGroupLayout { inner: layout, entry_count })
+    Ok(WBindGroupLayout::new(layout, entry_count))
 }
 
 /// Pipeline layout builder - accumulates bind group layouts then creates the pipeline layout
@@ -366,10 +402,7 @@ impl WPipelineLayoutBuilder {
 
         log::info!("Created pipeline layout with {} bind group layouts", self.layouts.len());
 
-        WPipelineLayout {
-            inner: layout,
-            bind_group_layout_count: self.layouts.len() as u32,
-        }
+        WPipelineLayout::new(layout, self.layouts.len() as u32)
     }
 }
 

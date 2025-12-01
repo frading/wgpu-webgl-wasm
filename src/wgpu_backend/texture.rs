@@ -1,7 +1,9 @@
 //! Texture and TextureView wrappers
 
 use wasm_bindgen::prelude::*;
+use std::sync::atomic::Ordering;
 use super::device::{WDevice, WQueue};
+use super::stats::{TEXTURE_COUNT, TEXTURE_VIEW_COUNT};
 
 /// Texture format enum (matching WebGPU, values match .d.ts)
 #[wasm_bindgen]
@@ -124,6 +126,12 @@ impl WTexture {
     }
 }
 
+impl Drop for WTexture {
+    fn drop(&mut self) {
+        TEXTURE_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 #[wasm_bindgen]
 impl WTexture {
     #[wasm_bindgen(getter)]
@@ -148,6 +156,7 @@ impl WTexture {
 
     #[wasm_bindgen(js_name = createView)]
     pub fn create_view(&self) -> WTextureView {
+        TEXTURE_VIEW_COUNT.fetch_add(1, Ordering::Relaxed);
         if self.is_surface {
             // For surface textures, we need to get the current frame
             WTextureView {
@@ -206,6 +215,7 @@ impl WTexture {
         base_array_layer: u32,
         array_layer_count: u32,
     ) -> WTextureView {
+        TEXTURE_VIEW_COUNT.fetch_add(1, Ordering::Relaxed);
         if self.is_surface {
             WTextureView {
                 inner: None,
@@ -263,6 +273,12 @@ pub struct WTextureView {
 impl WTextureView {
     pub(crate) fn inner(&self) -> Option<&wgpu::TextureView> {
         self.inner.as_ref()
+    }
+}
+
+impl Drop for WTextureView {
+    fn drop(&mut self) {
+        TEXTURE_VIEW_COUNT.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -326,6 +342,8 @@ pub fn create_texture(
         width, height, depth_or_array_layers, format, mip_level_count, sample_count
     );
 
+    TEXTURE_COUNT.fetch_add(1, Ordering::Relaxed);
+
     Ok(WTexture {
         inner: Some(texture),
         is_surface: false,
@@ -343,6 +361,8 @@ pub fn create_texture(
 pub fn get_surface_texture(device: &WDevice) -> WTexture {
     let state = device.state();
     let state = state.borrow();
+
+    TEXTURE_COUNT.fetch_add(1, Ordering::Relaxed);
 
     WTexture {
         inner: None,

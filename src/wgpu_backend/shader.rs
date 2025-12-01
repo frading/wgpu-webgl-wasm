@@ -1,7 +1,9 @@
 //! Shader module wrapper
 
 use wasm_bindgen::prelude::*;
+use std::sync::atomic::Ordering;
 use super::device::WDevice;
+use super::stats::SHADER_MODULE_COUNT;
 
 /// WebGPU Shader Module wrapper
 #[wasm_bindgen]
@@ -12,6 +14,12 @@ pub struct WShaderModule {
 impl WShaderModule {
     pub(crate) fn inner(&self) -> &wgpu::ShaderModule {
         &self.inner
+    }
+}
+
+impl Drop for WShaderModule {
+    fn drop(&mut self) {
+        SHADER_MODULE_COUNT.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -35,6 +43,8 @@ pub fn create_shader_module(
     });
 
     log::debug!("Created shader module");
+
+    SHADER_MODULE_COUNT.fetch_add(1, Ordering::Relaxed);
 
     Ok(WShaderModule { inner: module })
 }

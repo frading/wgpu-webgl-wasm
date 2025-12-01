@@ -2,6 +2,8 @@
 
 use wasm_bindgen::prelude::*;
 use super::device::{WDevice, WQueue};
+use super::stats::BUFFER_COUNT;
+use std::sync::atomic::Ordering;
 
 /// Buffer usage flags (matching WebGPU)
 pub mod buffer_usage {
@@ -29,6 +31,17 @@ impl WBuffer {
     pub(crate) fn inner(&self) -> &wgpu::Buffer {
         &self.inner
     }
+
+    pub(crate) fn new(inner: wgpu::Buffer, size: u64, usage: u32) -> Self {
+        BUFFER_COUNT.fetch_add(1, Ordering::Relaxed);
+        Self { inner, size, usage }
+    }
+}
+
+impl Drop for WBuffer {
+    fn drop(&mut self) {
+        BUFFER_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[wasm_bindgen]
@@ -54,11 +67,7 @@ pub fn create_buffer(device: &WDevice, size: u64, usage: u32) -> WBuffer {
 
     log::debug!("Created buffer: size={}, usage={:#x}", size, usage);
 
-    WBuffer {
-        inner: buffer,
-        size,
-        usage,
-    }
+    WBuffer::new(buffer, size, usage)
 }
 
 /// Create a buffer with initial data
@@ -80,11 +89,7 @@ pub fn create_buffer_with_data(device: &WDevice, data: &[u8], usage: u32) -> WBu
 
     log::debug!("Created buffer with data: size={}, usage={:#x}", data.len(), usage);
 
-    WBuffer {
-        inner: buffer,
-        size: data.len() as u64,
-        usage,
-    }
+    WBuffer::new(buffer, data.len() as u64, usage)
 }
 
 /// Write data to a buffer

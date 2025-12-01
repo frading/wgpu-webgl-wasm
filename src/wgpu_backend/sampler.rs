@@ -1,7 +1,9 @@
 //! Sampler wrapper
 
 use wasm_bindgen::prelude::*;
+use std::sync::atomic::Ordering;
 use super::device::WDevice;
+use super::stats::SAMPLER_COUNT;
 
 /// Address mode for texture sampling
 #[wasm_bindgen]
@@ -129,6 +131,12 @@ impl WSampler {
     }
 }
 
+impl Drop for WSampler {
+    fn drop(&mut self) {
+        SAMPLER_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 /// Create a sampler with full configuration
 #[wasm_bindgen(js_name = createSampler)]
 pub fn create_sampler(
@@ -167,6 +175,8 @@ pub fn create_sampler(
 
     log::debug!("Created sampler with lod=[{}, {}], compare={:?}, anisotropy={}",
         lod_min_clamp, lod_max_clamp, compare, anisotropy);
+
+    SAMPLER_COUNT.fetch_add(1, Ordering::Relaxed);
 
     Ok(WSampler { inner: sampler })
 }

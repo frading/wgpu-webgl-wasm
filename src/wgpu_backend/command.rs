@@ -6,12 +6,14 @@
 //! Commands are recorded into a Vec and then executed when the pass ends.
 
 use wasm_bindgen::prelude::*;
+use std::sync::atomic::Ordering;
 use super::device::{WDevice, get_device_state, DeviceState};
 use super::buffer::WBuffer;
 use super::pipeline::WRenderPipeline;
 use super::bind_group::WBindGroup;
 use super::texture::WTextureView;
 use super::types::*;
+use super::stats::{COMMAND_ENCODER_COUNT, RENDER_PASS_ENCODER_COUNT, COMMAND_BUFFER_COUNT};
 use std::sync::Arc;
 use std::cell::RefCell;
 
@@ -95,10 +97,17 @@ pub struct WRenderPassEncoder {
     encoder_index: usize,
 }
 
+impl Drop for WCommandEncoder {
+    fn drop(&mut self) {
+        COMMAND_ENCODER_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 /// Create a command encoder
 #[wasm_bindgen(js_name = createCommandEncoder)]
 pub fn create_command_encoder(device: &WDevice) -> WCommandEncoder {
     log::debug!("Creating command encoder");
+    COMMAND_ENCODER_COUNT.fetch_add(1, Ordering::Relaxed);
     WCommandEncoder {
         device_state: device.state(),
         render_passes: Vec::new(),
@@ -145,6 +154,7 @@ impl WCommandEncoder {
 
         let encoder_index = self.render_passes.len();
 
+        RENDER_PASS_ENCODER_COUNT.fetch_add(1, Ordering::Relaxed);
         WRenderPassEncoder {
             device_state: self.device_state.clone(),
             config,
@@ -200,6 +210,7 @@ impl WCommandEncoder {
 
         let encoder_index = self.render_passes.len();
 
+        RENDER_PASS_ENCODER_COUNT.fetch_add(1, Ordering::Relaxed);
         WRenderPassEncoder {
             device_state: self.device_state.clone(),
             config,
@@ -272,6 +283,7 @@ impl WCommandEncoder {
 
         let encoder_index = self.render_passes.len();
 
+        RENDER_PASS_ENCODER_COUNT.fetch_add(1, Ordering::Relaxed);
         WRenderPassEncoder {
             device_state: self.device_state.clone(),
             config,
@@ -286,6 +298,8 @@ impl WCommandEncoder {
         let render_passes = take_pending_passes();
         log::debug!("Finishing command encoder with {} render passes", render_passes.len());
 
+        // Track the real command buffer
+        COMMAND_BUFFER_COUNT.fetch_add(1, Ordering::Relaxed);
         let cmd_buf = WCommandBuffer {
             device_state: self.device_state.clone(),
             render_passes,
@@ -294,7 +308,8 @@ impl WCommandEncoder {
         // Store for later submission by queue.submit()
         set_pending_command_buffer(cmd_buf);
 
-        // Return a dummy - the real one is stored
+        // Return a dummy - the real one is stored (also track this one)
+        COMMAND_BUFFER_COUNT.fetch_add(1, Ordering::Relaxed);
         WCommandBuffer {
             device_state: self.device_state.clone(),
             render_passes: Vec::new(),
@@ -307,6 +322,12 @@ impl WCommandEncoder {
 pub struct WCommandBuffer {
     device_state: Arc<RefCell<DeviceState>>,
     render_passes: Vec<(RenderPassConfig, Vec<RenderCommand>)>,
+}
+
+impl Drop for WCommandBuffer {
+    fn drop(&mut self) {
+        COMMAND_BUFFER_COUNT.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 impl WCommandBuffer {
@@ -595,6 +616,7 @@ impl WRenderPassEncoder {
     /// End the render pass
     pub fn end(self) {
         log::debug!("End render pass with {} commands", self.commands.len());
+        RENDER_PASS_ENCODER_COUNT.fetch_sub(1, Ordering::Relaxed);
         // Store the completed pass in thread-local storage for finish() to retrieve
         add_pending_pass(self.config, self.commands);
     }

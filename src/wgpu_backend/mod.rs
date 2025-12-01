@@ -13,6 +13,7 @@ mod pipeline;
 mod bind_group;
 mod command;
 mod types;
+mod stats;
 
 pub use device::*;
 pub use buffer::*;
@@ -23,3 +24,4 @@ pub use pipeline::*;
 pub use bind_group::*;
 pub use command::*;
 pub use types::*;
+pub use stats::*;

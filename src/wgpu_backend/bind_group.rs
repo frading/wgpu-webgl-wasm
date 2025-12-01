@@ -268,10 +268,38 @@ pub fn create_bind_group_layout(
             i, binding, has_buffer, has_sampler, has_texture);
 
         let ty = if has_buffer {
+            let buffer_obj = buffer_val.as_ref().unwrap();
+
+            // Read minBindingSize from the buffer object
+            let min_binding_size = js_sys::Reflect::get(buffer_obj, &"minBindingSize".into())
+                .ok()
+                .and_then(|v| v.as_f64())
+                .and_then(|size| std::num::NonZeroU64::new(size as u64));
+
+            // Read hasDynamicOffset
+            let has_dynamic_offset = js_sys::Reflect::get(buffer_obj, &"hasDynamicOffset".into())
+                .ok()
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            // Read buffer type
+            let buffer_type_str = js_sys::Reflect::get(buffer_obj, &"type".into())
+                .ok()
+                .and_then(|v| v.as_string());
+
+            let buffer_type = match buffer_type_str.as_deref() {
+                Some("storage") => wgpu::BufferBindingType::Storage { read_only: false },
+                Some("read-only-storage") => wgpu::BufferBindingType::Storage { read_only: true },
+                _ => wgpu::BufferBindingType::Uniform, // "uniform" or default
+            };
+
+            log::info!("  buffer type: {:?}, hasDynamicOffset: {}, minBindingSize: {:?}",
+                buffer_type_str, has_dynamic_offset, min_binding_size);
+
             wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+                ty: buffer_type,
+                has_dynamic_offset,
+                min_binding_size,
             }
         } else if has_sampler {
             // Read sampler type from the sampler object

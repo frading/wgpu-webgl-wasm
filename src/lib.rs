@@ -22,7 +22,9 @@ pub fn init() {
     // Set panic hook for better error messages in the browser
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
-    console_log::init_with_level(log::Level::Debug).ok();
+    // Use Warn level to filter out verbose naga/wgpu internal logs
+    // (Resolving, wgsl automatic_conversion_consensus, var GlobalVariable, Naga generated, etc.)
+    console_log::init_with_level(log::Level::Warn).ok();
     log::info!("wgpu-webgl-wasm initialized (wgpu backend v2)");
 }
 

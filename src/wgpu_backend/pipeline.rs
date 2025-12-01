@@ -57,6 +57,8 @@ pub struct WRenderPipelineDescriptor {
     blend_alpha_src: WBlendFactor,
     blend_alpha_dst: WBlendFactor,
     blend_alpha_op: WBlendOperation,
+    vertex_entry_point: String,
+    fragment_entry_point: String,
 }
 
 struct VertexBufferLayoutData {
@@ -68,7 +70,7 @@ struct VertexBufferLayoutData {
 #[wasm_bindgen]
 impl WRenderPipelineDescriptor {
     #[wasm_bindgen(constructor)]
-    pub fn new(topology: WPrimitiveTopology) -> Self {
+    pub fn new(topology: WPrimitiveTopology, vertex_entry_point: &str, fragment_entry_point: &str) -> Self {
         Self {
             topology,
             cull_mode: WCullMode::None,
@@ -86,6 +88,8 @@ impl WRenderPipelineDescriptor {
             blend_alpha_src: WBlendFactor::One,
             blend_alpha_dst: WBlendFactor::Zero,
             blend_alpha_op: WBlendOperation::Add,
+            vertex_entry_point: vertex_entry_point.to_string(),
+            fragment_entry_point: fragment_entry_point.to_string(),
         }
     }
 
@@ -176,220 +180,220 @@ impl WRenderPipelineDescriptor {
 }
 
 /// Create a render pipeline with vertex buffer layout
-#[wasm_bindgen(js_name = createRenderPipelineWithLayout)]
-pub fn create_render_pipeline_with_layout(
-    device: &WDevice,
-    shader_module: &WShaderModule,
-    topology: WPrimitiveTopology,
-    vertex_layout: &WVertexBufferLayout,
-) -> Result<WRenderPipeline, JsValue> {
-    let state = device.state();
-    let state = state.borrow();
+// #[wasm_bindgen(js_name = createRenderPipelineWithLayout)]
+// pub fn create_render_pipeline_with_layout(
+//     device: &WDevice,
+//     shader_module: &WShaderModule,
+//     topology: WPrimitiveTopology,
+//     vertex_layout: &WVertexBufferLayout,
+// ) -> Result<WRenderPipeline, JsValue> {
+//     let state = device.state();
+//     let state = state.borrow();
 
-    // Convert WVertexBufferLayout to wgpu format
-    let attributes: Vec<wgpu::VertexAttribute> = vertex_layout
-        .attributes
-        .iter()
-        .map(|attr| wgpu::VertexAttribute {
-            format: attr.format.to_wgpu(),
-            offset: attr.offset as u64,
-            shader_location: attr.location,
-        })
-        .collect();
+//     // Convert WVertexBufferLayout to wgpu format
+//     let attributes: Vec<wgpu::VertexAttribute> = vertex_layout
+//         .attributes
+//         .iter()
+//         .map(|attr| wgpu::VertexAttribute {
+//             format: attr.format.to_wgpu(),
+//             offset: attr.offset as u64,
+//             shader_location: attr.location,
+//         })
+//         .collect();
 
-    let vertex_buffer_layout = wgpu::VertexBufferLayout {
-        array_stride: vertex_layout.stride as u64,
-        step_mode: wgpu::VertexStepMode::Vertex,
-        attributes: &attributes,
-    };
+//     let vertex_buffer_layout = wgpu::VertexBufferLayout {
+//         array_stride: vertex_layout.stride as u64,
+//         step_mode: wgpu::VertexStepMode::Vertex,
+//         attributes: &attributes,
+//     };
 
-    let pipeline = state
-        .device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: shader_module.inner(),
-                entry_point: Some("vertex"),
-                buffers: &[vertex_buffer_layout],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: shader_module.inner(),
-                entry_point: Some("fragment"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: state.surface_config.format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: topology.to_wgpu(),
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+//     let pipeline = state
+//         .device
+//         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+//             label: None,
+//             layout: None,
+//             vertex: wgpu::VertexState {
+//                 module: shader_module.inner(),
+//                 entry_point: Some("vertex"),
+//                 buffers: &[vertex_buffer_layout],
+//                 compilation_options: Default::default(),
+//             },
+//             fragment: Some(wgpu::FragmentState {
+//                 module: shader_module.inner(),
+//                 entry_point: Some("fragment"),
+//                 targets: &[Some(wgpu::ColorTargetState {
+//                     format: state.surface_config.format,
+//                     blend: None,
+//                     write_mask: wgpu::ColorWrites::ALL,
+//                 })],
+//                 compilation_options: Default::default(),
+//             }),
+//             primitive: wgpu::PrimitiveState {
+//                 topology: topology.to_wgpu(),
+//                 ..Default::default()
+//             },
+//             depth_stencil: None,
+//             multisample: wgpu::MultisampleState::default(),
+//             multiview_mask: None,
+//             cache: None,
+//         });
 
-    log::debug!("Created render pipeline with vertex layout");
+//     log::debug!("Created render pipeline with vertex layout");
 
-    Ok(WRenderPipeline { inner: pipeline })
-}
+//     Ok(WRenderPipeline { inner: pipeline })
+// }
 
 /// Create a render pipeline (simple version without vertex attributes)
-#[wasm_bindgen(js_name = createRenderPipeline)]
-pub fn create_render_pipeline(
-    device: &WDevice,
-    shader_module: &WShaderModule,
-    topology: WPrimitiveTopology,
-) -> Result<WRenderPipeline, JsValue> {
-    let state = device.state();
-    let state = state.borrow();
+// #[wasm_bindgen(js_name = createRenderPipeline)]
+// pub fn create_render_pipeline(
+//     device: &WDevice,
+//     shader_module: &WShaderModule,
+//     topology: WPrimitiveTopology,
+// ) -> Result<WRenderPipeline, JsValue> {
+//     let state = device.state();
+//     let state = state.borrow();
 
-    let pipeline = state
-        .device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: shader_module.inner(),
-                entry_point: Some("vertex"),
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: shader_module.inner(),
-                entry_point: Some("fragment"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: state.surface_config.format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: topology.to_wgpu(),
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+//     let pipeline = state
+//         .device
+//         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+//             label: None,
+//             layout: None,
+//             vertex: wgpu::VertexState {
+//                 module: shader_module.inner(),
+//                 entry_point: Some("vertex"),
+//                 buffers: &[],
+//                 compilation_options: Default::default(),
+//             },
+//             fragment: Some(wgpu::FragmentState {
+//                 module: shader_module.inner(),
+//                 entry_point: Some("fragment"),
+//                 targets: &[Some(wgpu::ColorTargetState {
+//                     format: state.surface_config.format,
+//                     blend: None,
+//                     write_mask: wgpu::ColorWrites::ALL,
+//                 })],
+//                 compilation_options: Default::default(),
+//             }),
+//             primitive: wgpu::PrimitiveState {
+//                 topology: topology.to_wgpu(),
+//                 ..Default::default()
+//             },
+//             depth_stencil: None,
+//             multisample: wgpu::MultisampleState::default(),
+//             multiview_mask: None,
+//             cache: None,
+//         });
 
-    log::debug!("Created render pipeline");
+//     log::debug!("Created render pipeline");
 
-    Ok(WRenderPipeline { inner: pipeline })
-}
+//     Ok(WRenderPipeline { inner: pipeline })
+// }
 
-/// Create a render pipeline from descriptor
-#[wasm_bindgen(js_name = createRenderPipelineFromDescriptor)]
-pub fn create_render_pipeline_from_descriptor(
-    device: &WDevice,
-    shader_module: &WShaderModule,
-    descriptor: &WRenderPipelineDescriptor,
-) -> Result<WRenderPipeline, JsValue> {
-    let state = device.state();
-    let state = state.borrow();
+// /// Create a render pipeline from descriptor
+// #[wasm_bindgen(js_name = createRenderPipelineFromDescriptor)]
+// pub fn create_render_pipeline_from_descriptor(
+//     device: &WDevice,
+//     shader_module: &WShaderModule,
+//     descriptor: &WRenderPipelineDescriptor,
+// ) -> Result<WRenderPipeline, JsValue> {
+//     let state = device.state();
+//     let state = state.borrow();
 
-    log::info!(
-        "createRenderPipelineFromDescriptor: topology={:?}, cull={:?}, front={:?}, depth_test={}, depth_write={}, blend={}, descriptor_color_format={:?}, surface_format={:?}, vertex_layouts={}",
-        descriptor.topology, descriptor.cull_mode, descriptor.front_face,
-        descriptor.depth_test_enabled, descriptor.depth_write_enabled,
-        descriptor.blend_enabled, descriptor.color_format, state.surface_config.format,
-        descriptor.vertex_layouts.len()
-    );
+//     log::info!(
+//         "createRenderPipelineFromDescriptor: topology={:?}, cull={:?}, front={:?}, depth_test={}, depth_write={}, blend={}, descriptor_color_format={:?}, surface_format={:?}, vertex_layouts={}",
+//         descriptor.topology, descriptor.cull_mode, descriptor.front_face,
+//         descriptor.depth_test_enabled, descriptor.depth_write_enabled,
+//         descriptor.blend_enabled, descriptor.color_format, state.surface_config.format,
+//         descriptor.vertex_layouts.len()
+//     );
 
-    // Build vertex buffer layouts
-    let vertex_buffer_layouts: Vec<wgpu::VertexBufferLayout> = descriptor
-        .vertex_layouts
-        .iter()
-        .map(|layout| wgpu::VertexBufferLayout {
-            array_stride: layout.stride,
-            step_mode: layout.step_mode,
-            attributes: &layout.attributes,
-        })
-        .collect();
+//     // Build vertex buffer layouts
+//     let vertex_buffer_layouts: Vec<wgpu::VertexBufferLayout> = descriptor
+//         .vertex_layouts
+//         .iter()
+//         .map(|layout| wgpu::VertexBufferLayout {
+//             array_stride: layout.stride,
+//             step_mode: layout.step_mode,
+//             attributes: &layout.attributes,
+//         })
+//         .collect();
 
-    // Build blend state
-    let blend = if descriptor.blend_enabled {
-        Some(wgpu::BlendState {
-            color: wgpu::BlendComponent {
-                operation: descriptor.blend_color_op.to_wgpu(),
-                src_factor: descriptor.blend_color_src.to_wgpu(),
-                dst_factor: descriptor.blend_color_dst.to_wgpu(),
-            },
-            alpha: wgpu::BlendComponent {
-                operation: descriptor.blend_alpha_op.to_wgpu(),
-                src_factor: descriptor.blend_alpha_src.to_wgpu(),
-                dst_factor: descriptor.blend_alpha_dst.to_wgpu(),
-            },
-        })
-    } else {
-        None
-    };
+//     // Build blend state
+//     let blend = if descriptor.blend_enabled {
+//         Some(wgpu::BlendState {
+//             color: wgpu::BlendComponent {
+//                 operation: descriptor.blend_color_op.to_wgpu(),
+//                 src_factor: descriptor.blend_color_src.to_wgpu(),
+//                 dst_factor: descriptor.blend_color_dst.to_wgpu(),
+//             },
+//             alpha: wgpu::BlendComponent {
+//                 operation: descriptor.blend_alpha_op.to_wgpu(),
+//                 src_factor: descriptor.blend_alpha_src.to_wgpu(),
+//                 dst_factor: descriptor.blend_alpha_dst.to_wgpu(),
+//             },
+//         })
+//     } else {
+//         None
+//     };
 
-    // Build depth stencil state
-    let depth_stencil = if descriptor.depth_test_enabled {
-        Some(wgpu::DepthStencilState {
-            format: descriptor
-                .depth_format
-                .unwrap_or(WTextureFormat::Depth24Plus)
-                .to_wgpu(),
-            depth_write_enabled: descriptor.depth_write_enabled,
-            depth_compare: descriptor.depth_compare.to_wgpu(),
-            stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
-        })
-    } else {
-        None
-    };
+//     // Build depth stencil state
+//     let depth_stencil = if descriptor.depth_test_enabled {
+//         Some(wgpu::DepthStencilState {
+//             format: descriptor
+//                 .depth_format
+//                 .unwrap_or(WTextureFormat::Depth24Plus)
+//                 .to_wgpu(),
+//             depth_write_enabled: descriptor.depth_write_enabled,
+//             depth_compare: descriptor.depth_compare.to_wgpu(),
+//             stencil: wgpu::StencilState::default(),
+//             bias: wgpu::DepthBiasState::default(),
+//         })
+//     } else {
+//         None
+//     };
 
-    // Use the color format from the descriptor
-    let color_format = descriptor.color_format.to_wgpu();
+//     // Use the color format from the descriptor
+//     let color_format = descriptor.color_format.to_wgpu();
 
-    log::info!("Creating pipeline with color format {:?}", color_format);
+//     log::info!("Creating pipeline with color format {:?}", color_format);
 
-    let pipeline = state
-        .device
-        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: None,
-            layout: None,
-            vertex: wgpu::VertexState {
-                module: shader_module.inner(),
-                entry_point: Some("vertex"),
-                buffers: &vertex_buffer_layouts,
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: shader_module.inner(),
-                entry_point: Some("fragment"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: color_format,
-                    blend,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: descriptor.topology.to_wgpu(),
-                front_face: descriptor.front_face.to_wgpu(),
-                cull_mode: descriptor.cull_mode.to_wgpu(),
-                ..Default::default()
-            },
-            depth_stencil,
-            multisample: wgpu::MultisampleState::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+//     let pipeline = state
+//         .device
+//         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+//             label: None,
+//             layout: None,
+//             vertex: wgpu::VertexState {
+//                 module: shader_module.inner(),
+//                 entry_point: Some("vertex"),
+//                 buffers: &vertex_buffer_layouts,
+//                 compilation_options: Default::default(),
+//             },
+//             fragment: Some(wgpu::FragmentState {
+//                 module: shader_module.inner(),
+//                 entry_point: Some("fragment"),
+//                 targets: &[Some(wgpu::ColorTargetState {
+//                     format: color_format,
+//                     blend,
+//                     write_mask: wgpu::ColorWrites::ALL,
+//                 })],
+//                 compilation_options: Default::default(),
+//             }),
+//             primitive: wgpu::PrimitiveState {
+//                 topology: descriptor.topology.to_wgpu(),
+//                 front_face: descriptor.front_face.to_wgpu(),
+//                 cull_mode: descriptor.cull_mode.to_wgpu(),
+//                 ..Default::default()
+//             },
+//             depth_stencil,
+//             multisample: wgpu::MultisampleState::default(),
+//             multiview_mask: None,
+//             cache: None,
+//         });
 
-    log::debug!("Created render pipeline from descriptor");
+//     log::debug!("Created render pipeline from descriptor");
 
-    Ok(WRenderPipeline { inner: pipeline })
-}
+//     Ok(WRenderPipeline { inner: pipeline })
+// }
 
 /// Create a render pipeline from descriptor with explicit pipeline layout
 #[wasm_bindgen(js_name = createRenderPipelineWithPipelineLayout)]
@@ -458,7 +462,10 @@ pub fn create_render_pipeline_with_pipeline_layout(
     // Use the color format from the descriptor
     let color_format = descriptor.color_format.to_wgpu();
 
-    log::info!("Creating pipeline with explicit layout, color format {:?}", color_format);
+    log::info!(
+        "Creating pipeline with explicit layout, color format {:?}, vertex_entry={}, fragment_entry={}",
+        color_format, descriptor.vertex_entry_point, descriptor.fragment_entry_point
+    );
 
     let pipeline = state
         .device
@@ -467,13 +474,13 @@ pub fn create_render_pipeline_with_pipeline_layout(
             layout: Some(pipeline_layout.inner()),
             vertex: wgpu::VertexState {
                 module: shader_module.inner(),
-                entry_point: Some("vertex"),
+                entry_point: Some(&descriptor.vertex_entry_point),
                 buffers: &vertex_buffer_layouts,
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader_module.inner(),
-                entry_point: Some("fragment"),
+                entry_point: Some(&descriptor.fragment_entry_point),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: color_format,
                     blend,

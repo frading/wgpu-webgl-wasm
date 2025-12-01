@@ -159,7 +159,25 @@ impl WTexture {
                 dimension: WTextureViewDimension::D2,
             }
         } else if let Some(ref texture) = self.inner {
-            let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+            // Explicitly set the dimension to avoid wgpu's heuristics
+            // (e.g., 12 layers would be assumed CubeArray because 12 % 6 == 0)
+            let view_dimension = if self.depth_or_array_layers > 1 {
+                wgpu::TextureViewDimension::D2Array
+            } else {
+                wgpu::TextureViewDimension::D2
+            };
+
+            let view = texture.create_view(&wgpu::TextureViewDescriptor {
+                label: None,
+                format: None,
+                dimension: Some(view_dimension),
+                usage: None,
+                aspect: wgpu::TextureAspect::All,
+                base_mip_level: 0,
+                mip_level_count: None,
+                base_array_layer: 0,
+                array_layer_count: None,
+            });
             WTextureView {
                 inner: Some(view),
                 is_surface: false,

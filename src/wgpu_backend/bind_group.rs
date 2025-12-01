@@ -261,9 +261,9 @@ pub fn create_bind_group_layout(
         let sampler_val = js_sys::Reflect::get(&entry_obj, &"sampler".into()).ok();
         let texture_val = js_sys::Reflect::get(&entry_obj, &"texture".into()).ok();
 
-        let has_buffer = buffer_val.map(|v| v.is_object()).unwrap_or(false);
-        let has_sampler = sampler_val.map(|v| v.is_object()).unwrap_or(false);
-        let has_texture = texture_val.map(|v| v.is_object()).unwrap_or(false);
+        let has_buffer = buffer_val.as_ref().map(|v| v.is_object()).unwrap_or(false);
+        let has_sampler = sampler_val.as_ref().map(|v| v.is_object()).unwrap_or(false);
+        let has_texture = texture_val.as_ref().map(|v| v.is_object()).unwrap_or(false);
 
         log::info!("createBindGroupLayout entry {}: binding={}, has_buffer={}, has_sampler={}, has_texture={}",
             i, binding, has_buffer, has_sampler, has_texture);
@@ -275,12 +275,61 @@ pub fn create_bind_group_layout(
                 min_binding_size: None,
             }
         } else if has_sampler {
-            wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering)
+            // Read sampler type from the sampler object
+            let sampler_obj = sampler_val.as_ref().unwrap();
+            let sampler_type = js_sys::Reflect::get(sampler_obj, &"type".into())
+                .ok()
+                .and_then(|v| v.as_string());
+
+            let binding_type = match sampler_type.as_deref() {
+                Some("comparison") => wgpu::SamplerBindingType::Comparison,
+                Some("non-filtering") => wgpu::SamplerBindingType::NonFiltering,
+                _ => wgpu::SamplerBindingType::Filtering, // "filtering" or default
+            };
+
+            log::info!("  sampler type: {:?} -> {:?}", sampler_type, binding_type);
+            wgpu::BindingType::Sampler(binding_type)
         } else if has_texture {
+            // Read texture properties
+            let texture_obj = texture_val.as_ref().unwrap();
+
+            let sample_type_str = js_sys::Reflect::get(texture_obj, &"sampleType".into())
+                .ok()
+                .and_then(|v| v.as_string());
+
+            let view_dimension_str = js_sys::Reflect::get(texture_obj, &"viewDimension".into())
+                .ok()
+                .and_then(|v| v.as_string());
+
+            let multisampled = js_sys::Reflect::get(texture_obj, &"multisampled".into())
+                .ok()
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            let sample_type = match sample_type_str.as_deref() {
+                Some("depth") => wgpu::TextureSampleType::Depth,
+                Some("sint") => wgpu::TextureSampleType::Sint,
+                Some("uint") => wgpu::TextureSampleType::Uint,
+                Some("unfilterable-float") => wgpu::TextureSampleType::Float { filterable: false },
+                _ => wgpu::TextureSampleType::Float { filterable: true }, // "float" or default
+            };
+
+            let view_dimension = match view_dimension_str.as_deref() {
+                Some("1d") => wgpu::TextureViewDimension::D1,
+                Some("2d-array") => wgpu::TextureViewDimension::D2Array,
+                Some("cube") => wgpu::TextureViewDimension::Cube,
+                Some("cube-array") => wgpu::TextureViewDimension::CubeArray,
+                Some("3d") => wgpu::TextureViewDimension::D3,
+                _ => wgpu::TextureViewDimension::D2, // "2d" or default
+            };
+
+            log::info!("  texture sampleType: {:?} -> {:?}, viewDimension: {:?} -> {:?}, multisampled: {}",
+                sample_type_str, sample_type, view_dimension_str, view_dimension, multisampled);
+
             wgpu::BindingType::Texture {
-                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                view_dimension: wgpu::TextureViewDimension::D2,
-                multisampled: false,
+                sample_type,
+                view_dimension,
+                multisampled,
             }
         } else {
             log::warn!("createBindGroupLayout entry {}: no recognized type, defaulting to Buffer", i);
